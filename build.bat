@@ -3,8 +3,8 @@ if not exist bin mkdir bin
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 
-set WV2_INC=packages\webview2\build\native\include
-set WV2_LIB=packages\webview2\build\native\x64
+set WV2_INC=packages\webview2\include
+set WV2_LIB=packages\webview2\lib
 
 rc /fo bin\app.res src\app.rc
 
@@ -32,7 +32,7 @@ cl /EHsc /std:c++17 /utf-8 /O2 /W1 ^
 if %ERRORLEVEL% == 0 (
     echo [OK] COMPILACAO CONCLUIDA COM SUCESSO!
     echo [OK] Executavel gerado em: bin\RoxyRoom.exe
-    copy /Y "packages\webview2\build\native\x64\WebView2Loader.dll" bin\ >nul 2>&1
+    copy /Y "packages\webview2\lib\WebView2Loader.dll" bin\ >nul 2>&1
     if not exist bin\web mkdir bin\web
     xcopy /E /I /Y web bin\web >nul 2>&1
     del /Q *.obj bin\app.res 2>nul

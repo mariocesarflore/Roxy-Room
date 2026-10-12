@@ -194,7 +194,7 @@ O executável compilado será gerado em `bin/RoxyRoom.exe`.
 ### 3. Gerar Nova Versão e Pacote de Atualização
 Para gerar um novo instalador e o pacote `.zip` para o auto-updater:
 ```bash
-python package_update.py 1.0.1 "Correção de bugs e melhorias no player"
+python tools/package_release.py 1.0.1 "Correção de bugs e melhorias no player"
 ```
 
 ---

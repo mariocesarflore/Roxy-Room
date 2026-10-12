@@ -1,0 +1,5 @@
+# Mark third-party packages as vendored so GitHub does not include them in language statistics
+packages/** linguist-vendored
+packages/** linguist-generated
+*.lib binary
+*.dll binary

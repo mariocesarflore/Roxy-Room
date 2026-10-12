@@ -5,16 +5,17 @@ bin/
 *.pdb
 *.ilk
 *.exp
-*.lib
+*.zip
+src/payload_data.h
 
-# Visual Studio / IDE
+# Temporary scripts
+ENVIAR_PARA_GITHUB.bat
+
+# IDE
 .vs/
 .vscode/
 *.user
 
-# Temporary files
-*.zip
-src/payload_data.h
-
-# Keep WebView2 package libraries
-!packages/
+# Vendor libraries exception
+!packages/webview2/lib/*.lib
+!packages/webview2/lib/*.dll
