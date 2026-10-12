@@ -91,7 +91,7 @@ def main():
 
     # 2. Build binaries using build.bat
     print("[2/4] Compilando executavel do Roxy Room...")
-    build_bat = os.path.join(base_dir, "build.bat")
+    build_bat = os.path.join(base_dir, "tools", "build.bat")
     proc = subprocess.run(f'cmd /c "{build_bat}"', shell=True, capture_output=True, text=True, cwd=base_dir)
     if proc.returncode != 0:
         print("[ERRO] Falha ao compilar:")

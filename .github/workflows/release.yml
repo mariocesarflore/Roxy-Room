@@ -32,21 +32,21 @@ jobs:
              src\D3D11Renderer.cpp `
              src\NativePlayerWindow.cpp `
              bin\app.res `
-             /I src /I packages\webview2\build\native\include `
+             /I src /I packages\webview2\include `
              /Fe:bin\RoxyRoom.exe `
              /D UNICODE /D _UNICODE `
              /link `
-             packages\webview2\build\native\x64\WebView2LoaderStatic.lib `
+             packages\webview2\lib\WebView2LoaderStatic.lib `
              mmdevapi.lib avrt.lib d3d11.lib dxgi.lib d3dcompiler.lib `
              ws2_32.lib advapi32.lib crypt32.lib user32.lib shell32.lib ole32.lib gdi32.lib `
              shlwapi.lib version.lib dwmapi.lib `
              /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup
-          Copy-Item packages\webview2\build\native\x64\WebView2Loader.dll bin\ -Force
+          Copy-Item packages\webview2\lib\WebView2Loader.dll bin\ -Force
           Copy-Item -Recurse web bin\web -Force
 
       - name: Build Installer and Update Package
         run: |
-          python build_installer.py
+          python tools/package_release.py
           Compress-Archive -Path bin\RoxyRoom.exe, bin\WebView2Loader.dll, src\app.ico, web -DestinationPath bin\RoxyRoom-Update.zip -Force
 
       - name: Create GitHub Release

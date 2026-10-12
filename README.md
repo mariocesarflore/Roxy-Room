@@ -187,7 +187,7 @@ cd Roxy-Room
 ### 2. Compilar o Executável
 Execute o script de compilação rápida:
 ```bash
-build.bat
+tools\build.bat
 ```
 O executável compilado será gerado em `bin/RoxyRoom.exe`.
 
