@@ -21,6 +21,7 @@ jobs:
 
       - name: Compile Roxy Room
         run: |
+          New-Item -ItemType Directory -Force -Path bin
           rc /fo bin\app.res src\app.rc
           cl /EHsc /std:c++17 /utf-8 /O2 /W1 `
              src\main.cpp `
@@ -47,7 +48,6 @@ jobs:
       - name: Build Installer and Update Package
         run: |
           python tools/package_release.py
-          Compress-Archive -Path bin\RoxyRoom.exe, bin\WebView2Loader.dll, src\app.ico, web -DestinationPath bin\RoxyRoom-Update.zip -Force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

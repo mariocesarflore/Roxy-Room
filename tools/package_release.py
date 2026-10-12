@@ -50,9 +50,22 @@ def compile_installer(base_dir, bin_dir):
         hf.write("};\n")
 
     print("   -> Compilando instalador nativo (Roxy Room Setup.exe)...")
-    vcvars = r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    vcvars_prefix = ""
+    import shutil
+    if not shutil.which("cl"):
+        candidates = [
+            r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+            r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
+            r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
+            r"C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat",
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                vcvars_prefix = f'call "{c}" && '
+                break
+
     installer_exe = os.path.join(bin_dir, "Roxy Room Setup.exe")
-    cmd = f'call "{vcvars}" && rc /fo bin\\installer.res src\\app.rc && cl /EHsc /std:c++17 /O2 /W1 src\\installer.cpp bin\\installer.res /I src /Fe:"{installer_exe}" /D UNICODE /D _UNICODE /link comctl32.lib shell32.lib shlwapi.lib ole32.lib advapi32.lib user32.lib gdi32.lib /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup'
+    cmd = f'{vcvars_prefix}rc /fo bin\\installer.res src\\app.rc && cl /EHsc /std:c++17 /O2 /W1 src\\installer.cpp bin\\installer.res /I src /Fe:"{installer_exe}" /D UNICODE /D _UNICODE /link comctl32.lib shell32.lib shlwapi.lib ole32.lib advapi32.lib user32.lib gdi32.lib /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup'
     proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=base_dir)
 
     for temp_file in [zip_path, header_path, os.path.join(bin_dir, "installer.res"), os.path.join(base_dir, "installer.obj")]:
