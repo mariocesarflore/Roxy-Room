@@ -1,65 +1,93 @@
 <div align="center">
 
-  <img src="web/brand/roxyroom-logo.png" alt="Roxy Room Logo" width="140" style="border-radius: 50%; box-shadow: 0 0 35px rgba(99, 102, 241, 0.6);" />
+  <br />
 
-  # 🌌 Roxy Room
-  ### Streaming P2P de Tela e Áudio com Ultra-Baixa Latência & Aceleração Direct3D 11
+  <a href="https://github.com/mariocesarflore/Roxy-Room">
+    <img src="web/brand/roxyroom-logo.png" alt="Roxy Room Logo" width="135" style="border-radius: 50%; box-shadow: 0 0 45px rgba(139, 92, 246, 0.6); border: 2px solid rgba(255, 255, 255, 0.1);" />
+  </a>
+
+  <h1 align="center" style="font-weight: 800; font-size: 2.4rem; letter-spacing: -0.5px; margin-top: 15px;">
+    🌌 ROXY ROOM
+  </h1>
 
   <p align="center">
-    Compartilhe sua tela e áudio com amigos em tempo real, sem intermediários, sem atrasos e com um player moderno estilo YouTube.
+    <a href="https://github.com/mariocesarflore/Roxy-Room">
+      <img src="https://readme-typing-svg.demolab.com?font=Plus+Jakarta+Sans&weight=700&size=20&duration=2800&pause=1100&color=A78BFA&center=true&vCenter=true&width=550&lines=Streaming+P2P+de+Tela+e+%C3%81udio+Sem+Delay;Acelera%C3%A7%C3%A3o+Nativa+por+GPU+Direct3D+11;Player+Minimalista+Moderno+Estilo+YouTube;Atualiza%C3%A7%C3%B5es+Autom%C3%A1ticas+Zero-Install" alt="Typing Tagline" />
+    </a>
   </p>
 
+  <p align="center">
+    <strong>Compartilhamento de tela e áudio entre amigos com foco total em ultra-baixa latência, leveza e privacidade.</strong>
+  </p>
+
+  <!-- Badges Primários -->
   <p align="center">
     <a href="https://github.com/mariocesarflore/Roxy-Room/releases/latest">
-      <img src="https://img.shields.io/github/v/release/mariocesarflore/Roxy-Room?color=7c3aed&label=Vers%C3%A3o%20Atual&style=for-the-badge&logo=github" alt="Versão" />
+      <img src="https://img.shields.io/github/v/release/mariocesarflore/Roxy-Room?color=8B5CF6&label=Vers%C3%A3o%20Est%C3%A1vel&logo=github&style=for-the-badge" alt="Versão Atual" />
     </a>
     <a href="https://github.com/mariocesarflore/Roxy-Room/releases">
-      <img src="https://img.shields.io/github/downloads/mariocesarflore/Roxy-Room/total?color=059669&label=Downloads&style=for-the-badge&logo=windows" alt="Downloads" />
+      <img src="https://img.shields.io/github/downloads/mariocesarflore/Roxy-Room/total?color=10B981&label=Downloads&logo=windows&style=for-the-badge" alt="Total de Downloads" />
     </a>
-    <a href="#-licença">
-      <img src="https://img.shields.io/badge/Licen%C3%A7a-MIT-blue?style=for-the-badge" alt="Licença MIT" />
+    <a href="#-licença--termos-de-uso">
+      <img src="https://img.shields.io/badge/Licen%C3%A7a-MIT-3B82F6?style=for-the-badge&logo=open-source-initiative&logoColor=white" alt="Licença MIT" />
     </a>
   </p>
 
+  <!-- Badges Tecnologias -->
   <p align="center">
-    <img src="https://img.shields.io/badge/Plataforma-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows" />
-    <img src="https://img.shields.io/badge/C%2B%2B-17%20%2F%20MSVC-00599C?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" />
-    <img src="https://img.shields.io/badge/Gr%C3%A1ficos-Direct3D%2011%20GPU-10B981?style=flat-square" alt="Direct3D 11" />
-    <img src="https://img.shields.io/badge/Rede-WebRTC%20P2P-8B5CF6?style=flat-square&logo=webrtc&logoColor=white" alt="WebRTC" />
-    <img src="https://img.shields.io/badge/Updates-Auto--Updater%20Nativo-EC4899?style=flat-square" alt="Auto-Updater" />
+    <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20(64--bit)-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows" />
+    <img src="https://img.shields.io/badge/C%2B%2B-17%20(MSVC%20Native)-00599C?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" />
+    <img src="https://img.shields.io/badge/GPU-Direct3D%2011%20Rendering-10B981?style=flat-square" alt="Direct3D 11" />
+    <img src="https://img.shields.io/badge/Rede-WebRTC%20P2P%20Direct-7C3AED?style=flat-square&logo=webrtc&logoColor=white" alt="WebRTC" />
+    <img src="https://img.shields.io/badge/Auto--Updater-Nativo%20em%20C%2B%2B-EC4899?style=flat-square" alt="Auto-Updater" />
   </p>
 
   <br />
 
+  <!-- Botão de Download Principal -->
   <p align="center">
-    <a href="https://github.com/mariocesarflore/Roxy-Room/releases">
-      <img src="https://img.shields.io/badge/%E2%96%B6%20BAIXAR%20INSTALADOR-Roxy%20Room%20Setup.exe-6366F1?style=for-the-badge&logo=windows&logoColor=white" alt="Download Roxy Room" height="38" />
+    <a href="https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe">
+      <img src="https://img.shields.io/badge/%E2%96%B6%20BAIXAR%20INSTALADOR%20OFICIAL-Roxy.Room.Setup.exe-6366F1?style=for-the-badge&logo=windows&logoColor=white" height="42" alt="Download Roxy Room" />
     </a>
   </p>
+
+  <br />
 
 </div>
 
 ---
 
-## 📑 Sumário
+## 📑 Navegação Rápida
 
-- [Visão Geral](#-visão-geral)
-- [Principais Recursos](#-principais-recursos)
-- [Player Estilo YouTube](#-player-minimalista-estilo-youtube)
-- [Tabela de Atalhos](#-atalhos-de-teclado)
-- [Sistema de Auto-Update](#-sistema-de-atualização-automática)
-- [Arquitetura & Tecnologias](#-arquitetura--tecnologias)
-- [Como Baixar e Usar](#-como-baixar-e-usar)
-- [Compilação & Desenvolvimento](#-compilação-e-desenvolvimento)
-- [Licença](#-licença)
+<p align="center">
+  <a href="#-por-que-o-roxy-room"><b>Por Que o Roxy Room?</b></a> •
+  <a href="#-principais-recursos"><b>Recursos</b></a> •
+  <a href="#-player-minimalista-estilo-youtube"><b>Player Estilo YouTube</b></a> •
+  <a href="#-atalhos-de-teclado"><b>Atalhos</b></a> •
+  <a href="#-sistema-de-atualização-automática"><b>Auto-Update</b></a> •
+  <a href="#-como-usar"><b>Como Usar</b></a> •
+  <a href="#-licença--termos-de-uso"><b>Licença</b></a>
+</p>
 
 ---
 
-## 💡 Visão Geral
+## 💡 Por Que o Roxy Room?
 
-O **Roxy Room** é uma aplicação nativa para Windows desenvolvida para oferecer compartilhamento de tela e áudio entre amigos com **foco absoluto em performance, baixa latência e simplicidade**.
+Enquanto programas tradicionais enviam todo o tráfego de vídeo para servidores centrais de empresas terceiras (adicionando filas, compressões pesadas e atrasos visíveis), o **Roxy Room** estabelece um **túnel direto P2P** entre os computadores:
 
-Ao contrário de serviços pesados que passam todo o tráfego de vídeo por servidores proprietários (gerando filas e compressões pesadas), o Roxy Room utiliza conexão direta **P2P (Peer-to-Peer) via WebRTC**, garantindo que o vídeo viaje diretamente entre você e quem está assistindo, aproveitando a aceleração de hardware nativa **Direct3D 11**.
+```mermaid
+flowchart LR
+    subgraph Tradicional["❌ Softwares Tradicionais (Alto Delay)"]
+        direction LR
+        U1["Seu Computador"] -->|"Vídeo Comprimido"| S["Servidor Central em Nuvem\n(Gargalo de Banda)"]
+        S -->|"Atraso de 400ms~1500ms"| U2["Amigo Assistindo"]
+    end
+
+    subgraph Roxy["⚡ Roxy Room (Túnel P2P Direto)"]
+        direction LR
+        P1["Seu Computador\n(DXGI Capture)"] ====>|"WebRTC Direto (0-15ms de Latência)\nAceleração GPU Direct3D 11"| P2["Amigo Assistindo\n(Player YouTube Estilo)"]
+    end
+```
 
 ---
 
@@ -67,33 +95,33 @@ Ao contrário de serviços pesados que passam todo o tráfego de vídeo por serv
 
 <table>
   <tr>
-    <td width="50%">
-      <h3>🚀 Ultra-Baixa Latência P2P</h3>
-      <p>Transmissão direta entre máquinas com suporte inteligente a STUN e ICE, reduzindo o delay para milissegundos.</p>
+    <td width="50%" valign="top">
+      <h3>🚀 Ultra-Baixa Latência (P2P Puro)</h3>
+      <p>Conexão direta ponta-a-ponta via WebRTC. O vídeo viaja em milissegundos pela rede sem intermediários ou perda de taxa de quadros.</p>
     </td>
-    <td width="50%">
+    <td width="50%" valign="top">
       <h3>🎮 Aceleração por GPU Direct3D 11</h3>
-      <p>Renderização de vídeo nativa acelerada por hardware, garantindo 60 FPS estáveis com 0% de sobrecarga na CPU.</p>
+      <p>Renderização com hardware nativo da placa de vídeo. Mantém 60 FPS lisos durante jogos pesados com 0% de uso de CPU.</p>
     </td>
   </tr>
   <tr>
-    <td width="50%">
+    <td width="50%" valign="top">
       <h3>🎛️ Player Estilo YouTube</h3>
-      <p>Interface minimalista nos cantos, slider de volume deslizante com expansão suave, tag AO VIVO e auto-ocultação inteligente.</p>
+      <p>Controles discretos posicionados nos cantos, slider de volume deslizante com expansão suave, tag <code>AO VIVO</code> e auto-hide inteligente.</p>
     </td>
-    <td width="50%">
+    <td width="50%" valign="top">
       <h3>🔊 Captura Seletiva de Áudio</h3>
-      <p>Transmita o som cristalino do jogo ou do sistema usando WASAPI loopback, com opção de isolar ou excluir processos.</p>
+      <p>Compartilhe o som de alta definição do jogo via Windows WASAPI Loopback, com suporte para isolar ou excluir sons indesejados.</p>
     </td>
   </tr>
   <tr>
-    <td width="50%">
+    <td width="50%" valign="top">
       <h3>🗗 Janela Separada / Popout</h3>
-      <p>Destaque qualquer transmissão em uma janela flutuante independente para assistir em um segundo monitor.</p>
+      <p>Destaque qualquer transmissão da sala em uma janela flutuante independente para assistir em um segundo monitor com facilidade.</p>
     </td>
-    <td width="50%">
-      <h3>🔄 Atualização Automática</h3>
-      <p>Mecanismo de auto-update integrado: quando uma nova versão é publicada, o app atualiza sozinho em segundos.</p>
+    <td width="50%" valign="top">
+      <h3>🔄 Auto-Updater Integrado</h3>
+      <p>Sem necessidade de reinstalação manual: novas versões lançadas são detectadas, baixadas e aplicadas automaticamente.</p>
     </td>
   </tr>
 </table>
@@ -102,107 +130,132 @@ Ao contrário de serviços pesados que passam todo o tráfego de vídeo por serv
 
 ## 🎬 Player Minimalista Estilo YouTube
 
-O player do Roxy Room foi desenhado para maximizar a área útil do vídeo:
+O player do Roxy Room foi projetado com inspiração direta no visual moderno do YouTube:
 
-- **Controles nos Cantos:**
-  - **Canto Inferior Esquerdo:** Botão Play/Pause, ícone de alto-falante com controle deslizante horizontal (*hover slide-out*) e indicador pulsante `🔴 AO VIVO`.
-  - **Canto Inferior Direito:** Botão de Captura Instantânea (`📸 Print HD`), Janela Destacada (`🗗 Popout`) e Tela Cheia (`⛶ Fullscreen`).
-- **Auto-Ocultação Inteligente:** Os controles e o cursor do mouse somem suavemente após 2.5 segundos de inatividade e reaparecem ao mover o mouse.
-- **Gradiente Sutil:** O fundo dos botões possui um degradê suave e transparente, sem faixas escuras bloqueando o vídeo.
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│                                                                        │
+│                           [ VÍDEO TRANSMISSÃO ]                        │
+│                                                                        │
+│                                                                        │
+│  [ ▶ / ⏸ ]  [ 🔊 ────● ]  🔴 AO VIVO                [ 📸 ] [ 🗗 ] [ ⛶ ]│
+└────────────────────────────────────────────────────────────────────────┘
+  ▲ Canto Esquerdo (Reprodução e Volume)             ▲ Canto Direito (Ações)
+```
+
+- **Controles no Canto Esquerdo:**
+  - Botão Play/Pause com alternância instantânea.
+  - Ícone de alto-falante que expande suavemente um slider de volume horizontal ao passar o cursor (*hover slide-out*).
+  - Chip discreto `🔴 AO VIVO` com animação de pulso luminoso.
+- **Controles no Canto Direito:**
+  - Botão de Captura Instantânea (`📸 Print HD`) da transmissão em resolução total.
+  - Janela Destacada (`🗗 Popout`) para assistir em segundo plano.
+  - Tela Cheia (`⛶ Fullscreen`) sem barras de título.
+- **Auto-Ocultação Inteligente:**
+  - Os botões e o cursor do mouse somem suavemente após **2.5 segundos de inatividade**.
+  - Ao mover o mouse, os controles reaparecem instantaneamente sobre um gradiente sutil e transparente.
 
 ---
 
 ## ⌨️ Atalhos de Teclado
 
-| Tecla / Atalho | Ação no Player |
-| :--- | :--- |
-| <kbd>Espaço</kbd> ou <kbd>K</kbd> | Alternar Play / Pause |
-| <kbd>M</kbd> | Mutar / Desmutar Áudio |
-| <kbd>F</kbd> | Alternar Tela Cheia |
-| <kbd>↑</kbd> *(Seta Cima)* | Aumentar Volume (+5%) |
-| <kbd>↓</kbd> *(Seta Baixo)* | Diminuir Volume (-5%) |
-| <kbd>Esc</kbd> | Sair da Tela Cheia / Fechar Player |
-| <kbd>Alt</kbd> + <kbd>G</kbd> | Iniciar / Parar Transmissão Instantaneamente |
+Controle tudo sem precisar encostar o cursor na tela:
+
+| Tecla / Atalho | Ação Executada |
+| :---: | :--- |
+| <kbd>Espaço</kbd> ou <kbd>K</kbd> | Alternar entre Pausar e Retomar o vídeo |
+| <kbd>M</kbd> | Mutar / Desmutar o áudio da transmissão |
+| <kbd>F</kbd> | Entrar ou Sair do modo **Tela Cheia** |
+| <kbd>↑</kbd> *(Seta Cima)* | Aumentar o volume (+5%) |
+| <kbd>↓</kbd> *(Seta Baixo)* | Diminuir o volume (-5%) |
+| <kbd>Esc</kbd> | Fechar tela cheia / Fechar o player |
+| <kbd>Alt</kbd> + <kbd>G</kbd> | **Iniciar / Encerrar Transmissão** de qualquer lugar no Windows |
 
 ---
 
 ## 🔄 Sistema de Atualização Automática
 
-O Roxy Room possui um **Auto-Updater nativo** que elimina a necessidade de reinstalação manual:
+O Roxy Room possui um motor nativo de **Zero-Install Auto-Update**:
 
 ```mermaid
-flowchart LR
-    A[Início do App] --> B{Verifica GitHub\nversion.json}
-    B -- Nova Versão Disponível --> C[Baixa RoxyRoom-Update.zip\nem Segundo Plano]
-    C --> D[Aplica Correções\ne Reinicia o App]
-    B -- Atualizado --> E[Abre o App Normalmente]
+flowchart TD
+    Start(["⚡ Inicialização do Roxy Room"]) --> Check{"Verifica GitHub\nversion.json"}
+    Check -- "Versão Mais Recente" --> OK["✅ Abre Diretamente sem Interrupções"]
+    Check -- "Nova Versão Detectada" --> Notify["🔔 Notifica o Usuário com Novidades"]
+    Notify --> Download["📦 Baixa RoxyRoom-Update.zip em Segundo Plano"]
+    Download --> Apply["🔄 Aplica Arquivos e Reinicia o Aplicativo"]
+    Apply --> Done(["🎉 Roxy Room Atualizado com Sucesso!"])
 ```
 
-1. Toda vez que o aplicativo abre (e a cada 45 minutos), ele consulta o repositório em busca de novas versões.
-2. Se houver uma atualização, o usuário recebe um aviso elegante com o changelog.
-3. Ao confirmar, o download ocorre em segundo plano, os arquivos são substituídos com segurança e o aplicativo reabre já na nova versão!
+- A verificação ocorre de forma transparente ao iniciar o app e periodicamente a cada 45 minutos.
+- O download ocorre em segundo plano sem congelar a tela.
 
 ---
 
-## 🏛️ Arquitetura & Tecnologias
+## 👥 Como Usar
 
-- **Linguagem Principal:** C++17 nativo de alta performance (Win32 API)
-- **Renderização e Vídeo:** Microsoft Direct3D 11 (D3D11) & DXGI Desktop Duplication
-- **Captura de Áudio:** Windows Core Audio (WASAPI Loopback Capture)
-- **Interface e Experiência:** WebView2 (Chromium Embedded) com design Dark Glassmorphism
-- **Conectividade:** WebRTC P2P com fallback via PeerJS & STUN servers
-- **Empacotamento & Deploy:** Utilitário Python automatizado + GitHub Actions CI/CD
+### 1. Instalação (Rápida em 1 Clique)
+1. Baixe o instalador oficial **[`Roxy.Room.Setup.exe`](https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe)**.
+2. Execute o instalador para criar os atalhos na Área de Trabalho e no Menu Iniciar.
 
----
+### 2. Entrar ou Criar uma Sala
+1. Abra o **Roxy Room**.
+2. Copie o seu código da sala (ex: `SALA-7421`) e envie para seu amigo.
+3. Seu amigo digita o código e clica em **Conectar**.
 
-## 📥 Como Baixar e Usar
-
-### Instalação Rápida:
-1. Vá até a seção de **[Releases](https://github.com/mariocesarflore/Roxy-Room/releases)**.
-2. Baixe o instalador oficial **`Roxy Room Setup.exe`**.
-3. Execute o instalador (ele cria os atalhos automaticamente na sua Área de Trabalho e Menu Iniciar).
-
-### Como Transmitir e Assistir:
-1. **Entrar na Sala:** Ao abrir, digite ou copie o código da sala (ex: `SALA-1234`).
-2. **Compartilhar:** Clique em **"Iniciar Transmissão"** (ou pressione <kbd>Alt + G</kbd>) e escolha a tela ou aplicativo desejado com áudio.
-3. **Assistir:** A transmissão do seu amigo aparecerá automaticamente com qualidade máxima e áudio sincronizado.
+### 3. Transmitir e Assistir
+1. Pressione o atalho global **<kbd>Alt + G</kbd>** ou clique no botão **"Iniciar Transmissão"**.
+2. Escolha sua tela cheia ou aplicativo específico com áudio ativado.
+3. A transmissão é exibida automaticamente para quem estiver na sala com qualidade máxima e som cristalino.
 
 ---
 
-## 🛠️ Compilação e Desenvolvimento
+## 🛠️ Compilação e Desenvolvimento Local
 
-Para quem deseja contribuir ou compilar o projeto do zero:
+Para desenvolvedores que desejam compilar o projeto do zero:
 
-### Pré-requisitos
-- **Windows 10 / 11 (64-bit)**
-- **Visual Studio 2022** com suporte a desenvolvimento Desktop em C++
-- **Python 3.8+**
-
-### 1. Clonar o Repositório
 ```bash
+# 1. Clone o repositório
 git clone https://github.com/mariocesarflore/Roxy-Room.git
 cd Roxy-Room
-```
 
-### 2. Compilar o Executável
-Execute o script de compilação rápida:
-```bash
+# 2. Compile o executável nativo em C++ (bin/RoxyRoom.exe)
 tools\build.bat
-```
-O executável compilado será gerado em `bin/RoxyRoom.exe`.
 
-### 3. Gerar Nova Versão e Pacote de Atualização
-Para gerar um novo instalador e o pacote `.zip` para o auto-updater:
-```bash
-python tools/package_release.py 1.0.1 "Correção de bugs e melhorias no player"
+# 3. Empacotar uma nova release com instalador
+python tools/package_release.py 1.0.1 "Correções e melhorias"
 ```
 
 ---
 
-## 📄 Licença
+## 📄 Licença & Termos de Uso
 
-Distribuído sob a **Licença MIT**. Consulte o arquivo [`LICENSE`](LICENSE) para mais detalhes.
+Este projeto está registrado e protegido sob os termos da **[Licença MIT](LICENSE)**.
 
 <div align="center">
-  <p>Feito com carinho e café por <strong><a href="https://github.com/mariocesarflore">Mário César Flore</a></strong> 🚀</p>
+
+| Permissões Oficiais | Condições | Limitações Legais |
+| :---: | :---: | :---: |
+| ✅ **Uso Comercial** | ℹ️ Preservação dos avisos de Copyright e Licença | ❌ Nenhuma Garantia de Software |
+| ✅ **Modificação do Código** | | ❌ Isenção Total de Responsabilidade |
+| ✅ **Distribuição Gratuita** | | |
+| ✅ **Uso Pessoal e Privado** | | |
+
+<br />
+
+<p>
+  Desenvolvido com carinho e dedicação por <strong><a href="https://github.com/mariocesarflore">Mário César Flore</a></strong> 🚀
+</p>
+
+<p>
+  <a href="https://github.com/mariocesarflore/Roxy-Room">
+    <img src="https://img.shields.io/github/stars/mariocesarflore/Roxy-Room?style=social" alt="GitHub Stars" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/mariocesarflore/Roxy-Room/fork">
+    <img src="https://img.shields.io/github/forks/mariocesarflore/Roxy-Room?style=social" alt="GitHub Forks" />
+  </a>
+</p>
+
 </div>
