@@ -130,31 +130,38 @@ flowchart LR
 
 ## 🎬 Player Minimalista Estilo YouTube
 
-O player do Roxy Room foi projetado com inspiração direta no visual moderno do YouTube:
+Inspirado na experiência fluida do YouTube, o player do Roxy Room foi desenhado para manter o foco total no vídeo, posicionando os controles de forma sutil e inteligente nos cantos:
 
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                                                                        │
-│                                                                        │
-│                           [ VÍDEO TRANSMISSÃO ]                        │
-│                                                                        │
-│                                                                        │
-│  [ ▶ / ⏸ ]  [ 🔊 ────● ]  🔴 AO VIVO                [ 📸 ] [ 🗗 ] [ ⛶ ]│
-└────────────────────────────────────────────────────────────────────────┘
-  ▲ Canto Esquerdo (Reprodução e Volume)             ▲ Canto Direito (Ações)
-```
-
-- **Controles no Canto Esquerdo:**
-  - Botão Play/Pause com alternância instantânea.
-  - Ícone de alto-falante que expande suavemente um slider de volume horizontal ao passar o cursor (*hover slide-out*).
-  - Chip discreto `🔴 AO VIVO` com animação de pulso luminoso.
-- **Controles no Canto Direito:**
-  - Botão de Captura Instantânea (`📸 Print HD`) da transmissão em resolução total.
-  - Janela Destacada (`🗗 Popout`) para assistir em segundo plano.
-  - Tela Cheia (`⛶ Fullscreen`) sem barras de título.
-- **Auto-Ocultação Inteligente:**
-  - Os botões e o cursor do mouse somem suavemente após **2.5 segundos de inatividade**.
-  - Ao mover o mouse, os controles reaparecem instantaneamente sobre um gradiente sutil e transparente.
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <h3>🕹️ Controles de Mídia</h3>
+      <p>Alternância instantânea de Play / Pause com feedback suave e sem atrasos.</p>
+    </td>
+    <td width="33%" align="center">
+      <h3>🔊 Volume Deslizante</h3>
+      <p>Controle horizontal retrátil que se expande suavemente ao passar o cursor (<em>hover slide-out</em>).</p>
+    </td>
+    <td width="33%" align="center">
+      <h3>🔴 Chip Ao Vivo</h3>
+      <p>Indicador discreto de transmissão em tempo real com efeito de pulso luminoso.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center">
+      <h3>📸 Captura Instantânea</h3>
+      <p>Tire prints em alta definição direto da transmissão com apenas um clique.</p>
+    </td>
+    <td width="33%" align="center">
+      <h3>🗗 Janela Popout</h3>
+      <p>Destaque a transmissão em uma janela separada nativa para outro monitor.</p>
+    </td>
+    <td width="33%" align="center">
+      <h3>✨ Auto-Ocultação</h3>
+      <p>Controles e cursor somem após 2.5s de inatividade e ressurgem ao mover o mouse.</p>
+    </td>
+  </tr>
+</table>
 
 ---
 
