@@ -1,0 +1,20 @@
+# Build artifacts
+bin/
+*.obj
+*.res
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Visual Studio / IDE
+.vs/
+.vscode/
+*.user
+
+# Temporary files
+*.zip
+src/payload_data.h
+
+# Keep WebView2 package libraries
+!packages/

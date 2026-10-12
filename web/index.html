@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roxy Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <div id="toastNotification" class="toast-notification"></div>
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-wrapper">
+          <div class="logo-avatar-wrap">
+            <img src="brand/roxyroom-logo.png" alt="Roxy Room" class="logo-img" />
+          </div>
+          <div class="logo-brand">
+            <span class="brand-name">roxy<span class="brand-name-light">room</span></span>
+          </div>
+        </div>
+
+        <div class="header-breadcrumb">
+          <span class="breadcrumb-room" id="headerRoomText">SALA-6863</span>
+          <span class="breadcrumb-sep">/</span>
+          <span class="breadcrumb-status" id="headerStatusText"><span class="status-dot-off" id="headerStatusDot"></span> desconectada</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="hideToTrayBtn" class="btn-header" title="Minimizar para a bandeja">
+          <svg class="header-svg svg-lavender" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v15H4z"/><path d="M2 8h20M8 12h8"/></svg>
+          <span>Ocultar</span>
+        </button>
+        <button id="settingsBtn" class="btn-header" title="Preferências">
+          <svg class="header-svg svg-cyan" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.72 1.72-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.08h-2.44v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06L8 16.94l.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.56-1.03h-.08v-2.44h.08A1.7 1.7 0 0 0 8.4 10.5a1.7 1.7 0 0 0-.34-1.88L8 8.56l1.72-1.72.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.69 5.7v-.08h2.44v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.72 1.72-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.08v2.44h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+          <span>Preferências</span>
+        </button>
+        <button id="quitAppBtn" class="btn-header btn-quit-header" title="Desligar aplicativo">
+          <svg class="header-svg svg-danger" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+          <span>Desligar</span>
+        </button>
+        <span id="statusBadge" style="display:none">Desconectado</span>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <main class="main-layout">
+      <!-- Sidebar / Controle da Sala -->
+      <aside class="sidebar-control">
+        <div class="sidebar-header">
+          <div class="section-tag">
+            <span>CONTROLE DA SALA</span>
+            <svg class="tag-sparkle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 1.65 5.35L19 10l-5.35 1.65L12 17l-1.65-5.35L5 10l5.35-1.65L12 3Z"/><path d="m19 16 .66 2.34L22 19l-2.34.66L19 22l-.66-2.34L16 19l2.34-.66L19 16Z"/></svg>
+          </div>
+          <h1 class="sidebar-title">
+            Seu espaço<br>
+            <span class="text-glow-gradient">está pronto.</span>
+          </h1>
+        </div>
+
+        <!-- Profile Card -->
+        <div class="profile-card">
+          <div class="profile-avatar" id="userAvatar">M</div>
+          <div class="profile-meta">
+            <span class="profile-badge">TRANSMISSOR</span>
+            <input type="text" id="usernameInput" class="profile-name-input" placeholder="Seu Nome / Nick..." autocomplete="off" value="Mario">
+          </div>
+          <div class="profile-status-dot" title="Online"></div>
+        </div>
+
+        <!-- Room Input Section -->
+        <div class="room-control-section">
+          <div class="section-tag-row">
+            <span class="section-tag">CÓDIGO DA SALA</span>
+            <span class="tag-status" id="roomStatusText"><span class="mini-dot" id="roomMiniDot"></span> <span id="roomStatusLabel">offline</span></span>
+          </div>
+
+          <div class="room-input-box">
+            <input type="text" id="roomId" placeholder="SALA-6863" autocomplete="off" spellcheck="false" value="SALA-6863">
+            <button id="createRoomBtn" class="input-inner-btn" title="Gerar ID Aleatório">
+              <svg class="inner-btn-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5M13 6l5 5M4 20 18 6"/><path d="m3 3 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></svg>
+            </button>
+            <button id="copyRoomBtn" class="input-inner-btn" title="Copiar ID da Sala">
+              <svg class="inner-btn-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+            </button>
+          </div>
+
+          <button id="joinRoomBtn" class="btn-action btn-connect">
+            <div class="btn-label-group">
+              <svg class="btn-action-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07.07l1.5-1.5a5 5 0 0 0-7.07-7.07l-.86.86"/><path d="M14 11a5 5 0 0 0-7.07-.07l-1.5 1.5a5 5 0 0 0 7.07 7.07l.86-.86"/></svg>
+              <span>Conectar à sala</span>
+            </div>
+            <span class="btn-shortcut-pill">X</span>
+          </button>
+
+          <button id="startBtn" class="btn-action btn-transmit">
+            <div class="btn-label-group">
+              <svg class="btn-action-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m9 10 2 2 4-4"/></svg>
+              <span id="startBtnText">Transmitir minha tela</span>
+            </div>
+            <span class="btn-shortcut-pill" id="shortcutBadge">Alt+G</span>
+          </button>
+        </div>
+
+        <!-- Members Section (Design Refinado) -->
+        <div class="users-section">
+          <div class="section-tag-row">
+            <span class="section-tag mono-tag">DENTRO DA SALA</span>
+            <span class="members-count-pill" id="userCount">0</span>
+          </div>
+          <ul class="user-list" id="userList">
+            <li class="empty-list">Ninguém na sala.</li>
+          </ul>
+        </div>
+
+        <!-- Hidden hooks for compatibility -->
+        <button id="privacyToggleBtn" style="display:none"></button>
+        <button id="pixBtn" style="display:none"></button>
+        <button id="discordBtn" style="display:none"></button>
+      </aside>
+
+      <!-- Stage / Transmission View -->
+      <section class="stage-view-area">
+        <div class="stage-view-header">
+          <div class="stage-heading-wrap">
+            <div class="stage-title-row">
+              <span class="section-tag">VISÃO DA TRANSMISSÃO</span>
+              <span class="stage-status-pill" id="stageStatusPill">
+                <span class="room-live-dot"></span>
+                <span id="stageStatusPillText">Pronto</span>
+              </span>
+            </div>
+            <h2 class="stage-main-title">O palco da sua sala</h2>
+          </div>
+          <div class="stage-header-actions">
+            <button id="openNativePlayerBtn" class="stage-icon-btn" title="Player Direct3D 11 (GPU)">
+              <svg class="stage-action-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <button id="stageFullscreenBtn" class="stage-icon-btn" title="Modo Palco em Tela Cheia (F11)">
+              <svg class="stage-action-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+            </button>
+            <button id="stageConfigBtn" class="stage-icon-btn" title="Configurações e Qualidade">
+              <svg class="stage-action-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.72 1.72-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.08h-2.44v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06L8 16.94l.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.56-1.03h-.08v-2.44h.08A1.7 1.7 0 0 0 8.4 10.5a1.7 1.7 0 0 0-.34-1.88L8 8.56l1.72-1.72.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.69 5.7v-.08h2.44v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.72 1.72-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.08v2.44h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Cosmic Stage Box -->
+        <div class="stage-card-container">
+          <!-- Top Bar inside Stage -->
+          <div class="stage-inner-topbar">
+            <div class="stage-room-badge-group">
+              <span class="room-live-dot" id="stageLiveDot"></span>
+              <span class="stage-room-name" id="stageRoomDisplay">SALA-6863</span>
+              <span class="stage-private-badge">PRIVADA</span>
+            </div>
+            <div class="stage-status-caption" id="stageTransmissionStatus">aguardando transmissão •</div>
+          </div>
+
+          <!-- Stage Core Grid & Celestial Standby Graphic -->
+          <div class="video-grid" id="videoGrid">
+            <div class="video-placeholder" id="emptyPlaceholder">
+              <div class="cosmic-stage-center">
+                <!-- Celestial Orbit Graphic -->
+                <div class="orbital-system">
+                  <div class="orbit-ring ring-1"></div>
+                  <div class="orbit-ring ring-2"></div>
+                  <div class="orbit-sparkle sparkle-1">✦</div>
+                  <div class="orbit-sparkle sparkle-2">✦</div>
+                  <div class="orbit-sparkle sparkle-3">✦</div>
+                  
+                  <div class="orbit-center-node">
+                    <div class="node-glow"></div>
+                    <svg class="center-monitor-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                  </div>
+                </div>
+
+                <div class="stage-placeholder-text">
+                  <span class="palco-tag">PALCO EM ESPERA</span>
+                  <h3 class="palco-headline">A tela está em silêncio.</h3>
+                  <button id="igniteStageBtn" class="btn-ignite-stage">
+                    <svg class="ignite-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5M13 6l5 5M4 20 18 6"/><path d="m3 3 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></svg>
+                    <span>Acender o palco</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Bar inside Stage -->
+          <div class="stage-inner-bottombar">
+            <div class="bottombar-badge">
+              <svg class="bottombar-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>transmissão protegida</span>
+            </div>
+            <div class="bottombar-badge">
+              <svg class="bottombar-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM5 16a5 5 0 0 1 5 5M5 12a9 9 0 0 1 9 9M5 8a13 13 0 0 1 13 13"/></svg>
+              <span>boa qualidade</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Seleção de Fonte -->
+  <div class="modal-overlay" id="sourcePickerModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-header-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m9 10 2 2 4-4"/></svg>
+          <h3>Escolha o que deseja transmitir</h3>
+        </div>
+        <button id="closeSourcePickerBtn" class="close-modal">&times;</button>
+      </div>
+      <div class="source-tabs">
+        <button class="tab-btn active" data-tab="screens">
+          <svg class="tab-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <span>Telas</span>
+        </button>
+        <button class="tab-btn" data-tab="windows">
+          <svg class="tab-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+          <span>Janelas</span>
+        </button>
+        <button class="tab-btn" data-tab="cameras">
+          <svg class="tab-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Câmeras</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="sourceGrid" class="source-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Preferências / Configurações -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-header-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.72 1.72-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.08h-2.44v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06L8 16.94l.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.56-1.03h-.08v-2.44h.08A1.7 1.7 0 0 0 8.4 10.5a1.7 1.7 0 0 0-.34-1.88L8 8.56l1.72-1.72.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.69 5.7v-.08h2.44v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.72 1.72-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.08v2.44h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+          <h3>Preferências da Transmissão</h3>
+        </div>
+        <button id="closeModalBtn" class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-item">
+          <label for="profilePresetSelect">⚡ Perfil de Desempenho (Auto-Ajuste):</label>
+          <select id="profilePresetSelect" class="styled-select">
+            <option value="auto" selected>✨ Automático (Detectar Hardware)</option>
+            <option value="weak">🐢 PC Fraco / Econômico (480p / 30 FPS / 1.5 Mbps)</option>
+            <option value="balanced">⚖️ PC Médio / Equilibrado (720p / 30-60 FPS / 3.5 Mbps)</option>
+            <option value="high">🚀 PC Forte / Alta Qualidade (1080p / 60 FPS / 6.0 Mbps)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label for="shortcutInput">Atalho para Transmitir Minha Tela:</label>
+          <input type="text" id="shortcutInput" class="styled-input shortcut-recorder" placeholder="Clique e pressione as teclas..." readonly>
+        </div>
+
+        <div class="setting-item">
+          <label for="resSelect">Resolução da Tela:</label>
+          <select id="resSelect" class="styled-select">
+            <option value="1440">1440p (QHD)</option>
+            <option value="1080">1080p (Full HD)</option>
+            <option value="720" selected>720p (HD - Recomendado)</option>
+            <option value="480">480p (Desempenho)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label for="fpsSelect">Taxa de Quadros (FPS):</label>
+          <select id="fpsSelect" class="styled-select">
+            <option value="60" selected>60 FPS (Jogos &amp; Fluidez)</option>
+            <option value="30">30 FPS (Padrão)</option>
+            <option value="15">15 FPS (Economia)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label for="bitrateSelect">Qualidade Padrão por Pessoa (Bitrate):</label>
+          <select id="bitrateSelect" class="styled-select">
+            <option value="8000000">8 Mbps (Ultra - QHD)</option>
+            <option value="6000000">6 Mbps (Alta Qualidade)</option>
+            <option value="3500000" selected>3.5 Mbps (Equilibrado)</option>
+            <option value="1500000">1.5 Mbps (Conexão Lenta)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label class="checkbox-container">
+            <input type="checkbox" id="streamSoundToggle" checked>
+            <span>Tocar som suave ao iniciar transmissão</span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <label class="checkbox-container">
+            <input type="checkbox" id="limitMbpsToggle" checked>
+            <span>Limitador de Mbps total (Upload Máximo Dividido)</span>
+          </label>
+          <div class="slider-group" id="mbpsControls">
+            <input type="range" id="mbpsRange" min="1" max="1000" value="30" class="styled-range">
+            <input type="number" id="mbpsInput" min="1" max="1000" value="30" class="styled-input-num">
+            <span class="slider-unit">Mbps</span>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label class="checkbox-container">
+            <input type="checkbox" id="autoOpenStreamsToggle">
+            <span>Abrir novas transmissões automaticamente</span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <label class="checkbox-container">
+            <input type="checkbox" id="modoDevToggle">
+            <span>Modo Desenvolvedor (Exibir Latência &amp; FPS em tempo real)</span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <label for="audioSelect">Captura de Som do Sistema:</label>
+          <select id="audioSelect" class="styled-select">
+            <option value="exclude" selected>🔇 Capturar Som (Escolher Apps para EXCLUIR)</option>
+            <option value="all">🔊 Capturar Todo Som do PC</option>
+            <option value="false">🔇 Sem Som</option>
+          </select>
+        </div>
+
+        <div class="setting-item" style="margin-top:8px">
+          <label>Rede &amp; Conexão Local:</label>
+          <button id="modalFirewallBtn" class="btn-secondary-modal" style="width:100%">
+            <svg class="btn-svg-sm" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span>Liberar Firewall do Windows</span>
+          </button>
+        </div>
+
+        <div class="setting-item" style="margin-top:8px">
+          <label>Atualizações do Aplicativo:</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button id="checkUpdateBtn" class="btn-secondary-modal" type="button" style="flex:1;">
+              <svg class="btn-svg-sm" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              <span>Verificar Atualizações</span>
+            </button>
+            <span id="updateVersionBadge" style="font-size:0.75rem; color:#818cf8; font-weight:700; background:rgba(99,102,241,0.15); padding:4px 8px; border-radius:6px;">v1.0.0</span>
+          </div>
+        </div>
+
+        <div class="setting-item info-footer-box">
+          <small>
+            <strong>✨ Roxy Room</strong><br>
+            Streaming P2P de alta fidelidade e ultra-baixa latência.<br>
+            Atualizações automáticas ativas via GitHub.<br>
+          </small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="saveSettingsBtn" class="btn-primary-modal" style="width:100%">Salvar Preferências</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Escolher Apps para Excluir do Áudio -->
+  <div class="modal-overlay" id="audioAppsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-header-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM5 16a5 5 0 0 1 5 5M5 12a9 9 0 0 1 9 9M5 8a13 13 0 0 1 13 13"/></svg>
+          <h3>Escolher Apps para Excluir do Áudio</h3>
+        </div>
+        <button id="closeAudioAppsBtn" class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Selecione o aplicativo cujo áudio você deseja <strong>silenciar</strong> da transmissão (ex: Discord, Spotify, navegadores).
+        </p>
+        <button id="refreshAudioAppsBtn" class="btn-secondary-modal" style="width:100%;margin-bottom:12px">
+          <svg class="btn-svg-sm" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5M13 6l5 5M4 20 18 6"/><path d="m3 3 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></svg>
+          <span>Atualizar Lista de Aplicativos</span>
+        </button>
+        <div id="audioAppsList" class="audio-apps-list">
+          <div class="loading-state">Carregando aplicativos...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="confirmAudioExcludeBtn" class="btn-primary-modal" style="width:100%">Iniciar Transmissão com Exclusão</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context menu nos vídeos -->
+  <div class="context-menu" id="videoContextMenu">
+    <button id="nativePlayerContextBtn">
+      <svg class="menu-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span>Abrir no Player Nativo (Direct3D 11)</span>
+    </button>
+    <button id="popoutContextBtn">
+      <svg class="menu-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m9 10 2 2 4-4"/></svg>
+      <span>Abrir em Janela Separada</span>
+    </button>
+    <button id="resetZoomContextBtn">
+      <svg class="menu-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+      <span>Resetar Zoom</span>
+    </button>
+    <button id="closeContextBtn" class="danger">
+      <svg class="menu-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      <span>Fechar / Parar de Assistir</span>
+    </button>
+  </div>
+
+  <script src="peerjs.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
