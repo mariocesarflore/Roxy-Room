@@ -51,6 +51,8 @@ static HINSTANCE g_hInst = nullptr;
 static DWORD g_webviewBrowserPid = 0;
 static std::thread g_suppressorThread;
 static std::atomic<bool> g_stopSuppressor{ false };
+static HANDLE g_hMutex = nullptr;
+static HANDLE g_hJob = nullptr;
 
 void StartScreenShareBarSuppressor() {
     g_suppressorThread = std::thread([]() {
@@ -311,7 +313,14 @@ void CleanExit() {
     }
     ForceKillWebViewProcesses();
 
-    // 5. Hard exit process to ensure zero hung threads or sockets
+    // 5. Release single instance mutex
+    if (g_hMutex) {
+        ReleaseMutex(g_hMutex);
+        CloseHandle(g_hMutex);
+        g_hMutex = nullptr;
+    }
+
+    // 6. Hard exit process to ensure zero hung threads or sockets
     TerminateProcess(GetCurrentProcess(), 0);
 }
 
@@ -366,10 +375,11 @@ void PerformAppUpdate(const std::wstring& downloadUrl) {
     CreateDirectoryW(updateDir.c_str(), nullptr);
 
     std::wstring zipPath = updateDir + L"\\RoxyRoom-Update.zip";
-    std::wstring batPath = updateDir + L"\\apply_update.bat";
+    std::wstring ps1Path = updateDir + L"\\update.ps1";
 
-    // Delete any previous update file
+    // Delete any previous update files
     DeleteFileW(zipPath.c_str());
+    DeleteFileW(ps1Path.c_str());
 
     // 1. Notify UI: downloading
     SendToWebView(L"{\"type\":\"updateProgress\",\"status\":\"downloading\"}");
@@ -405,33 +415,97 @@ void PerformAppUpdate(const std::wstring& downloadUrl) {
         return;
     }
 
-    // 3. Resolve app directory
+    // 3. Resolve app directory and full exe path
     WCHAR exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::wstring fullExe(exePath);
     PathRemoveFileSpecW(exePath);
     std::wstring appDir(exePath);
 
-    // 4. Create batch updater script
-    std::wofstream batFile(batPath);
-    if (batFile.is_open()) {
-        batFile << L"@echo off\r\n";
-        batFile << L"echo Atualizando o Roxy Room para a versao mais recente...\r\n";
-        batFile << L"timeout /t 1 /nobreak >nul\r\n";
-        batFile << L"tar -xf \"" << zipPath << L"\" -C \"" << appDir << L"\"\r\n";
-        batFile << L"start \"\" \"" << fullExe << L"\"\r\n";
-        batFile << L"timeout /t 2 /nobreak >nul\r\n";
-        batFile << L"del /q \"" << zipPath << L"\"\r\n";
-        batFile << L"del /q \"%~f0\"\r\n";
-        batFile.close();
+    // 4. Create robust PowerShell updater script
+    std::wofstream psFile(ps1Path);
+    if (psFile.is_open()) {
+        psFile << L"param([int]$TargetPid, [string]$AppDir, [string]$ZipPath, [string]$ExePath)\r\n\r\n";
+        psFile << L"# 1. Aguarda o processo pai fechar\r\n";
+        psFile << L"if ($TargetPid -gt 0) {\r\n";
+        psFile << L"    try {\r\n";
+        psFile << L"        $p = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue\r\n";
+        psFile << L"        if ($p) { $p.WaitForExit(15000) }\r\n";
+        psFile << L"    } catch {}\r\n";
+        psFile << L"}\r\n\r\n";
+        psFile << L"# 2. Garante que qualquer instancia de RoxyRoom seja finalizada\r\n";
+        psFile << L"for ($i = 0; $i -lt 10; $i++) {\r\n";
+        psFile << L"    $running = Get-Process -Name \"RoxyRoom\" -ErrorAction SilentlyContinue\r\n";
+        psFile << L"    if (-not $running) { break }\r\n";
+        psFile << L"    Start-Sleep -Milliseconds 500\r\n";
+        psFile << L"}\r\n";
+        psFile << L"$lingering = Get-Process -Name \"RoxyRoom\" -ErrorAction SilentlyContinue\r\n";
+        psFile << L"if ($lingering) {\r\n";
+        psFile << L"    $lingering | Stop-Process -Force -ErrorAction SilentlyContinue\r\n";
+        psFile << L"    Start-Sleep -Milliseconds 800\r\n";
+        psFile << L"}\r\n\r\n";
+        psFile << L"# 3. Pausa para o Windows liberar os locks de arquivo e Mutex\r\n";
+        psFile << L"Start-Sleep -Milliseconds 600\r\n\r\n";
+        psFile << L"# 4. Extrai os arquivos da atualizacao com tentativas\r\n";
+        psFile << L"$extracted = $false\r\n";
+        psFile << L"for ($attempt = 1; $attempt -le 10; $attempt++) {\r\n";
+        psFile << L"    try {\r\n";
+        psFile << L"        $tar = Get-Command \"tar.exe\" -ErrorAction SilentlyContinue\r\n";
+        psFile << L"        if ($tar) {\r\n";
+        psFile << L"            & $tar.Source -xf $ZipPath -C $AppDir 2>$null\r\n";
+        psFile << L"            if ($LASTEXITCODE -eq 0) { $extracted = $true; break }\r\n";
+        psFile << L"        }\r\n";
+        psFile << L"        Expand-Archive -LiteralPath $ZipPath -DestinationPath $AppDir -Force -ErrorAction Stop\r\n";
+        psFile << L"        $extracted = $true\r\n";
+        psFile << L"        break\r\n";
+        psFile << L"    } catch {\r\n";
+        psFile << L"        Start-Sleep -Milliseconds 500\r\n";
+        psFile << L"    }\r\n";
+        psFile << L"}\r\n\r\n";
+        psFile << L"# 5. Inicia a nova versao do Roxy Room\r\n";
+        psFile << L"if (Test-Path $ExePath) {\r\n";
+        psFile << L"    Start-Process -FilePath $ExePath -WorkingDirectory $AppDir\r\n";
+        psFile << L"}\r\n\r\n";
+        psFile << L"# 6. Limpeza\r\n";
+        psFile << L"Start-Sleep -Seconds 3\r\n";
+        psFile << L"try { Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue } catch {}\r\n";
+        psFile << L"try { Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue } catch {}\r\n";
+        psFile.close();
     }
 
     // 5. Notify UI update is ready and restarting
     SendToWebView(L"{\"type\":\"updateReady\"}");
-    Sleep(1500);
+    Sleep(1200);
 
-    // 6. Launch updater detached and exit
-    ShellExecuteW(nullptr, L"open", batPath.c_str(), nullptr, nullptr, SW_HIDE);
+    // 6. Launch updater detached with breakaway from job
+    DWORD myPid = GetCurrentProcessId();
+    std::wstring psLaunch = L"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \""
+        + ps1Path + L"\" -TargetPid " + std::to_wstring(myPid)
+        + L" -AppDir \"" + appDir + L"\""
+        + L" -ZipPath \"" + zipPath + L"\""
+        + L" -ExePath \"" + fullExe + L"\"";
+
+    STARTUPINFOW siUp = { sizeof(siUp) };
+    siUp.dwFlags = STARTF_USESHOWWINDOW;
+    siUp.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION piUp = {};
+
+    std::vector<wchar_t> upBuf(psLaunch.begin(), psLaunch.end());
+    upBuf.push_back(0);
+
+    DWORD creationFlags = CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB;
+    if (!CreateProcessW(nullptr, upBuf.data(), nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &siUp, &piUp)) {
+        // Fallback without breakaway flag if job doesn't permit it
+        creationFlags = CREATE_NO_WINDOW | DETACHED_PROCESS;
+        if (CreateProcessW(nullptr, upBuf.data(), nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &siUp, &piUp)) {
+            CloseHandle(piUp.hProcess);
+            CloseHandle(piUp.hThread);
+        }
+    } else {
+        CloseHandle(piUp.hProcess);
+        CloseHandle(piUp.hThread);
+    }
+
     CleanExit();
 }
 
@@ -705,7 +779,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     g_hInst = hInstance;
 
     // Single instance lock
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"RoxyRoomAppLock");
+    g_hMutex = CreateMutexW(nullptr, TRUE, L"RoxyRoomAppLock");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         HWND existing = FindWindowW(L"RoxyRoom", nullptr);
         if (existing && IsWindow(existing)) {
@@ -713,18 +787,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             ShowWindow(existing, SW_RESTORE);
             SetForegroundWindow(existing);
             BringWindowToTop(existing);
-            CloseHandle(hMutex);
+            CloseHandle(g_hMutex);
+            g_hMutex = nullptr;
             return 0;
         }
     }
 
-    // Windows Job Object to auto-kill all child processes on exit
-    HANDLE hJob = CreateJobObjectW(nullptr, nullptr);
-    if (hJob) {
+    // Windows Job Object to auto-kill child processes on exit (allowing breakaway for updater)
+    g_hJob = CreateJobObjectW(nullptr, nullptr);
+    if (g_hJob) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
-        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
-        AssignProcessToJobObject(hJob, GetCurrentProcess());
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        SetInformationJobObject(g_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+        AssignProcessToJobObject(g_hJob, GetCurrentProcess());
     }
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
