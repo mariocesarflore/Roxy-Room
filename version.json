@@ -1,7 +1,7 @@
 {
-  "version": "1.1.1",
+  "version": "1.1.2",
   "name": "Roxy Room",
-  "changelog": "Correção definitiva do auto-update (processo desacoplado com breakaway e retentativas) + Otimização Suprema (ABR dinâmico, 1080p nativo para jogos, zero-copy socket e DirectFlip D3D11).",
+  "changelog": "Correcao definitiva auto-updater: remocao do Job Object do Windows, lancamento via Shell e logging detalhado.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

@@ -52,7 +52,6 @@ static DWORD g_webviewBrowserPid = 0;
 static std::thread g_suppressorThread;
 static std::atomic<bool> g_stopSuppressor{ false };
 static HANDLE g_hMutex = nullptr;
-static HANDLE g_hJob = nullptr;
 
 void StartScreenShareBarSuppressor() {
     g_suppressorThread = std::thread([]() {
@@ -422,54 +421,86 @@ void PerformAppUpdate(const std::wstring& downloadUrl) {
     PathRemoveFileSpecW(exePath);
     std::wstring appDir(exePath);
 
-    // 4. Create robust PowerShell updater script
+    // 4. Create robust PowerShell updater script with complete logging
     std::wofstream psFile(ps1Path);
     if (psFile.is_open()) {
         psFile << L"param([int]$TargetPid, [string]$AppDir, [string]$ZipPath, [string]$ExePath)\r\n\r\n";
+        psFile << L"$logFile = \"$env:TEMP\\RoxyRoom_Update\\update.log\"\r\n";
+        psFile << L"function Log($m) {\r\n";
+        psFile << L"    $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'\r\n";
+        psFile << L"    Add-Content -Path $logFile -Value \"[$t] $m\" -Force -ErrorAction SilentlyContinue\r\n";
+        psFile << L"}\r\n\r\n";
+        psFile << L"Log \"=== Roxy Room Updater Iniciado ===\"\r\n";
+        psFile << L"Log \"TargetPid: $TargetPid\"\r\n";
+        psFile << L"Log \"AppDir: $AppDir\"\r\n";
+        psFile << L"Log \"ZipPath: $ZipPath\"\r\n";
+        psFile << L"Log \"ExePath: $ExePath\"\r\n\r\n";
         psFile << L"# 1. Aguarda o processo pai fechar\r\n";
         psFile << L"if ($TargetPid -gt 0) {\r\n";
+        psFile << L"    Log \"Aguardando processo pai fechar...\"\r\n";
         psFile << L"    try {\r\n";
         psFile << L"        $p = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue\r\n";
         psFile << L"        if ($p) { $p.WaitForExit(15000) }\r\n";
-        psFile << L"    } catch {}\r\n";
+        psFile << L"        Log \"Processo pai encerrou.\"\r\n";
+        psFile << L"    } catch {\r\n";
+        psFile << L"        Log \"Aviso ao aguardar processo pai: $_\"\r\n";
+        psFile << L"    }\r\n";
         psFile << L"}\r\n\r\n";
         psFile << L"# 2. Garante que qualquer instancia de RoxyRoom seja finalizada\r\n";
         psFile << L"for ($i = 0; $i -lt 10; $i++) {\r\n";
         psFile << L"    $running = Get-Process -Name \"RoxyRoom\" -ErrorAction SilentlyContinue\r\n";
         psFile << L"    if (-not $running) { break }\r\n";
+        psFile << L"    Log \"Aguardando RoxyRoom terminar ($i)...\"\r\n";
         psFile << L"    Start-Sleep -Milliseconds 500\r\n";
         psFile << L"}\r\n";
         psFile << L"$lingering = Get-Process -Name \"RoxyRoom\" -ErrorAction SilentlyContinue\r\n";
         psFile << L"if ($lingering) {\r\n";
+        psFile << L"    Log \"Forcando encerramento de instancias restantes...\"\r\n";
         psFile << L"    $lingering | Stop-Process -Force -ErrorAction SilentlyContinue\r\n";
         psFile << L"    Start-Sleep -Milliseconds 800\r\n";
         psFile << L"}\r\n\r\n";
-        psFile << L"# 3. Pausa para o Windows liberar os locks de arquivo e Mutex\r\n";
-        psFile << L"Start-Sleep -Milliseconds 600\r\n\r\n";
+        psFile << L"# 3. Pausa para o Windows liberar os locks de arquivo\r\n";
+        psFile << L"Start-Sleep -Milliseconds 800\r\n\r\n";
         psFile << L"# 4. Extrai os arquivos da atualizacao com tentativas\r\n";
+        psFile << L"Log \"Iniciando extracao de $ZipPath para $AppDir...\"\r\n";
         psFile << L"$extracted = $false\r\n";
         psFile << L"for ($attempt = 1; $attempt -le 10; $attempt++) {\r\n";
         psFile << L"    try {\r\n";
         psFile << L"        $tar = Get-Command \"tar.exe\" -ErrorAction SilentlyContinue\r\n";
         psFile << L"        if ($tar) {\r\n";
-        psFile << L"            & $tar.Source -xf $ZipPath -C $AppDir 2>$null\r\n";
-        psFile << L"            if ($LASTEXITCODE -eq 0) { $extracted = $true; break }\r\n";
+        psFile << L"            & $tar.Source -xf \"$ZipPath\" -C \"$AppDir\" 2>&1 | Out-Null\r\n";
+        psFile << L"            if ($LASTEXITCODE -eq 0) {\r\n";
+        psFile << L"                $extracted = $true\r\n";
+        psFile << L"                Log \"Extracao com tar.exe bem-sucedida!\"\r\n";
+        psFile << L"                break\r\n";
+        psFile << L"            }\r\n";
         psFile << L"        }\r\n";
-        psFile << L"        Expand-Archive -LiteralPath $ZipPath -DestinationPath $AppDir -Force -ErrorAction Stop\r\n";
+        psFile << L"        Log \"Tentando Expand-Archive...\"\r\n";
+        psFile << L"        Expand-Archive -LiteralPath \"$ZipPath\" -DestinationPath \"$AppDir\" -Force -ErrorAction Stop\r\n";
         psFile << L"        $extracted = $true\r\n";
+        psFile << L"        Log \"Extracao com Expand-Archive bem-sucedida!\"\r\n";
         psFile << L"        break\r\n";
         psFile << L"    } catch {\r\n";
-        psFile << L"        Start-Sleep -Milliseconds 500\r\n";
+        psFile << L"        Log \"Falha na tentativa $attempt: $_\"\r\n";
+        psFile << L"        Start-Sleep -Milliseconds 600\r\n";
         psFile << L"    }\r\n";
         psFile << L"}\r\n\r\n";
         psFile << L"# 5. Inicia a nova versao do Roxy Room\r\n";
-        psFile << L"if (Test-Path $ExePath) {\r\n";
-        psFile << L"    Start-Process -FilePath $ExePath -WorkingDirectory $AppDir\r\n";
+        psFile << L"Log \"Iniciando nova versao em $ExePath...\"\r\n";
+        psFile << L"if (Test-Path \"$ExePath\") {\r\n";
+        psFile << L"    try {\r\n";
+        psFile << L"        $proc = Start-Process -FilePath \"$ExePath\" -WorkingDirectory \"$AppDir\" -PassThru\r\n";
+        psFile << L"        Log \"Roxy Room iniciado com sucesso! PID: $($proc.Id)\"\r\n";
+        psFile << L"    } catch {\r\n";
+        psFile << L"        Log \"ERRO ao iniciar Roxy Room: $_\"\r\n";
+        psFile << L"    }\r\n";
+        psFile << L"} else {\r\n";
+        psFile << L"    Log \"ERRO: ExePath nao encontrado: $ExePath\"\r\n";
         psFile << L"}\r\n\r\n";
         psFile << L"# 6. Limpeza\r\n";
         psFile << L"Start-Sleep -Seconds 3\r\n";
-        psFile << L"try { Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue } catch {}\r\n";
-        psFile << L"try { Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue } catch {}\r\n";
+        psFile << L"try { Remove-Item -LiteralPath \"$ZipPath\" -Force -ErrorAction SilentlyContinue } catch {}\r\n";
+        psFile << L"Log \"=== Fim do Updater ===\"\r\n";
         psFile.close();
     }
 
@@ -477,34 +508,23 @@ void PerformAppUpdate(const std::wstring& downloadUrl) {
     SendToWebView(L"{\"type\":\"updateReady\"}");
     Sleep(1200);
 
-    // 6. Launch updater detached with breakaway from job
+    // 6. Launch updater via ShellExecuteExW completely detached
     DWORD myPid = GetCurrentProcessId();
-    std::wstring psLaunch = L"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \""
+    std::wstring psArgs = L"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \""
         + ps1Path + L"\" -TargetPid " + std::to_wstring(myPid)
         + L" -AppDir \"" + appDir + L"\""
         + L" -ZipPath \"" + zipPath + L"\""
         + L" -ExePath \"" + fullExe + L"\"";
 
-    STARTUPINFOW siUp = { sizeof(siUp) };
-    siUp.dwFlags = STARTF_USESHOWWINDOW;
-    siUp.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION piUp = {};
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.fMask = SEE_MASK_NOZONECHECKS | SEE_MASK_FLAG_NO_UI;
+    sei.lpVerb = L"open";
+    sei.lpFile = L"powershell.exe";
+    sei.lpParameters = psArgs.c_str();
+    sei.nShow = SW_HIDE;
 
-    std::vector<wchar_t> upBuf(psLaunch.begin(), psLaunch.end());
-    upBuf.push_back(0);
-
-    DWORD creationFlags = CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB;
-    if (!CreateProcessW(nullptr, upBuf.data(), nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &siUp, &piUp)) {
-        // Fallback without breakaway flag if job doesn't permit it
-        creationFlags = CREATE_NO_WINDOW | DETACHED_PROCESS;
-        if (CreateProcessW(nullptr, upBuf.data(), nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &siUp, &piUp)) {
-            CloseHandle(piUp.hProcess);
-            CloseHandle(piUp.hThread);
-        }
-    } else {
-        CloseHandle(piUp.hProcess);
-        CloseHandle(piUp.hThread);
-    }
+    ShellExecuteExW(&sei);
+    Sleep(500);
 
     CleanExit();
 }
@@ -791,15 +811,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             g_hMutex = nullptr;
             return 0;
         }
-    }
-
-    // Windows Job Object to auto-kill child processes on exit (allowing breakaway for updater)
-    g_hJob = CreateJobObjectW(nullptr, nullptr);
-    if (g_hJob) {
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
-        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
-        SetInformationJobObject(g_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
-        AssignProcessToJobObject(g_hJob, GetCurrentProcess());
     }
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
