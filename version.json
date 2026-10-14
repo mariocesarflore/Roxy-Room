@@ -1,7 +1,7 @@
 {
   "version": "1.1.3",
   "name": "Roxy Room",
-  "changelog": "Correcao definitiva do auto-updater: script PowerShell em modo binario sem CRLF duplo e variaveis de erro corrigidas.",
+  "changelog": "Otimização Suprema (1080p, ABR e D3D11) + Auto-update corrigido. (Aviso: se você ainda está na v1.0.0, baixe o instalador no GitHub uma única vez para migrar).",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }
