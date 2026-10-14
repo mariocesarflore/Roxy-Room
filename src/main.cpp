@@ -54,11 +54,18 @@ static std::atomic<bool> g_stopSuppressor{ false };
 
 void StartScreenShareBarSuppressor() {
     g_suppressorThread = std::thread([]() {
+        bool barHidden = false;
         while (!g_stopSuppressor.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-            if (g_stopSuppressor.load()) break;
+            if (!g_isStreaming.load()) {
+                barHidden = false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                continue;
+            }
 
-            EnumWindows([](HWND hwnd, LPARAM) -> BOOL {
+            std::this_thread::sleep_for(std::chrono::milliseconds(barHidden ? 1000 : 350));
+            if (g_stopSuppressor.load() || !g_isStreaming.load()) continue;
+
+            EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
                 if (!hwnd || !IsWindow(hwnd)) return TRUE;
                 // STRICT SAFETY: Never touch main window, any of its children, or native player window
                 if (hwnd == g_hwnd || IsChild(g_hwnd, hwnd)) return TRUE;
@@ -94,14 +101,14 @@ void StartScreenShareBarSuppressor() {
                     sTitle.find(L"Parar compartilhamento") != std::wstring::npos) {
                     isShareBar = true;
                 } else {
-                    EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+                    EnumChildWindows(hwnd, [](HWND child, LPARAM pParam) -> BOOL {
                         WCHAR cText[256] = {};
                         GetWindowTextW(child, cText, 255);
                         std::wstring sc = cText;
                         if (sc.find(L"Parar compartilhamento") != std::wstring::npos ||
                             sc.find(L"Stop sharing") != std::wstring::npos ||
                             sc.find(L"compartilhando sua tela") != std::wstring::npos) {
-                            *reinterpret_cast<bool*>(lParam) = true;
+                            *reinterpret_cast<bool*>(pParam) = true;
                             return FALSE;
                         }
                         return TRUE;
@@ -111,10 +118,11 @@ void StartScreenShareBarSuppressor() {
                 if (isShareBar) {
                     ShowWindow(hwnd, SW_HIDE);
                     SetWindowPos(hwnd, nullptr, -10000, -10000, 0, 0, SWP_NOACTIVATE | SWP_NOZORDER | SWP_HIDEWINDOW);
+                    *reinterpret_cast<bool*>(lParam) = true;
                 }
 
                 return TRUE;
-            }, 0);
+            }, reinterpret_cast<LPARAM>(&barHidden));
         }
     });
 }
@@ -571,8 +579,15 @@ void InitWebView2(HWND hwnd) {
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     options->put_AdditionalBrowserArguments(
         L"--autoplay-policy=no-user-gesture-required "
-        L"--enable-features=WebRtcHardwareVideoEncoding,WebRtcHardwareVideoDecoding "
-        L"--disable-features=CalculateNativeWinOcclusion"
+        L"--enable-features=WebRtcHardwareVideoEncoding,WebRtcHardwareVideoDecoding,WebRtcHideLocalIpsWithMdns,ZeroCopy "
+        L"--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,ThrottleDisplayNoneAndDisplayInlineCSS "
+        L"--disable-renderer-backgrounding "
+        L"--disable-background-timer-throttling "
+        L"--disable-backgrounding-occluded-windows "
+        L"--enable-gpu-rasterization "
+        L"--enable-zero-copy "
+        L"--ignore-gpu-blocklist "
+        L"--force-gpu-mem-available-mb=1024"
     );
 
     HRESULT hrInit = CreateCoreWebView2EnvironmentWithOptions(nullptr, dataPath.c_str(), options.Get(),

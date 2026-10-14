@@ -196,6 +196,22 @@ function connectToRoom(room) {
 
     call.answer(); // Answer to receive video/audio stream
     
+    // Zero-latency presentation: bypass Chromium default 100-200ms jitter buffer
+    try {
+      if (call.peerConnection) {
+        call.peerConnection.getReceivers().forEach(r => {
+          if ('playoutDelayHint' in r) r.playoutDelayHint = 0;
+          if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0;
+        });
+        call.peerConnection.addEventListener('track', (e) => {
+          if (e.receiver) {
+            if ('playoutDelayHint' in e.receiver) e.receiver.playoutDelayHint = 0;
+            if ('jitterBufferTarget' in e.receiver) e.receiver.jitterBufferTarget = 0;
+          }
+        });
+      }
+    } catch(e) {}
+
     call.on('stream', (remoteStream) => {
       console.log('[WebRTC] Stream recebido!', remoteStream);
       if (requestStreamInterval) {
@@ -207,6 +223,7 @@ function connectToRoom(room) {
         if (videoEl.srcObject !== remoteStream) {
           videoEl.srcObject = remoteStream;
         }
+        if ('playoutDelayHint' in videoEl) videoEl.playoutDelayHint = 0;
         videoEl.setAttribute('playsinline', '');
         videoEl.setAttribute('webkit-playsinline', '');
         videoEl.volume = parseFloat(volumeSlider ? volumeSlider.value : 1) || 1;

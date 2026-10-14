@@ -117,7 +117,7 @@ bool D3D11Renderer::CreateDeviceAndSwapChain(HWND hwnd) {
     scDesc.SampleDesc.Count = 1;
     scDesc.SampleDesc.Quality = 0;
     scDesc.Windowed = TRUE;
-    scDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    scDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     scDesc.Flags = 0;
 
     UINT createFlags = 0;
@@ -133,7 +133,7 @@ bool D3D11Renderer::CreateDeviceAndSwapChain(HWND hwnd) {
     };
     D3D_FEATURE_LEVEL featureLevel;
 
-    // First try hardware acceleration
+    // First try hardware acceleration with modern Flip Model
     HRESULT hr = D3D11CreateDeviceAndSwapChain(
         nullptr,
         D3D_DRIVER_TYPE_HARDWARE,
@@ -148,6 +148,25 @@ bool D3D11Renderer::CreateDeviceAndSwapChain(HWND hwnd) {
         &featureLevel,
         &m_pContext
     );
+
+    // Fall back to classic DISCARD if flip model is unsupported on legacy OS
+    if (FAILED(hr)) {
+        scDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        hr = D3D11CreateDeviceAndSwapChain(
+            nullptr,
+            D3D_DRIVER_TYPE_HARDWARE,
+            nullptr,
+            createFlags,
+            featureLevels,
+            ARRAYSIZE(featureLevels),
+            D3D11_SDK_VERSION,
+            &scDesc,
+            &m_pSwapChain,
+            &m_pDevice,
+            &featureLevel,
+            &m_pContext
+        );
+    }
 
     // If hardware is unavailable (very old PC or VM), fall back to WARP (high-speed software rasterizer)
     if (FAILED(hr)) {

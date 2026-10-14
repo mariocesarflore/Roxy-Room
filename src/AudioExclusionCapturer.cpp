@@ -367,30 +367,34 @@ static void ConvertToFloat32(const BYTE* pSrcData, UINT32 numFrames, const WAVEF
         }
     }
 
-    // Integer PCM formats
+    // Integer PCM formats with fast reciprocal multiplication (auto-vectorizable via SSE/AVX)
     if (bitsPerSample == 16) {
         const int16_t* pSrc = reinterpret_cast<const int16_t*>(pSrcData);
+        constexpr float kRecip16 = 1.0f / 32768.0f;
         for (UINT32 i = 0; i < totalSamples; ++i) {
-            pDst[i] = pSrc[i] / 32768.0f;
+            pDst[i] = pSrc[i] * kRecip16;
         }
     } else if (bitsPerSample == 24) {
         const BYTE* pSrc = pSrcData;
+        constexpr float kRecip24 = 1.0f / 8388608.0f;
         for (UINT32 i = 0; i < totalSamples; ++i) {
             int32_t val = (static_cast<int32_t>(pSrc[0])) |
                           (static_cast<int32_t>(pSrc[1]) << 8) |
                           (static_cast<int32_t>(static_cast<int8_t>(pSrc[2])) << 16);
-            pDst[i] = val / 8388608.0f;
+            pDst[i] = val * kRecip24;
             pSrc += 3;
         }
     } else if (bitsPerSample == 32) {
         const int32_t* pSrc = reinterpret_cast<const int32_t*>(pSrcData);
+        constexpr float kRecip32 = 1.0f / 2147483648.0f;
         for (UINT32 i = 0; i < totalSamples; ++i) {
-            pDst[i] = pSrc[i] / 2147483648.0f;
+            pDst[i] = pSrc[i] * kRecip32;
         }
     } else if (bitsPerSample == 8) {
         const uint8_t* pSrc = reinterpret_cast<const uint8_t*>(pSrcData);
+        constexpr float kRecip8 = 1.0f / 128.0f;
         for (UINT32 i = 0; i < totalSamples; ++i) {
-            pDst[i] = (static_cast<int32_t>(pSrc[i]) - 128) / 128.0f;
+            pDst[i] = (static_cast<float>(pSrc[i]) - 128.0f) * kRecip8;
         }
     } else {
         memset(pDst, 0, totalSamples * sizeof(float));
@@ -488,6 +492,7 @@ public:
         m_step = (srcRate && srcRate != 48000) ? (double)srcRate / 48000.0 : 1.0;
         m_pos = 0.0;
         m_prevL = m_prevR = 0.0f;
+        m_tmp.reserve(4096);
     }
 
     // in: float intercalado (srcChannels); out: estereo 48k intercalado (append)
@@ -496,6 +501,7 @@ public:
         DownmixToStereo(in, frames, m_ch, m_tmp);
 
         if (m_step == 1.0) {
+            out.reserve(out.size() + m_tmp.size());
             out.insert(out.end(), m_tmp.begin(), m_tmp.end());
             return;
         }
@@ -503,6 +509,9 @@ public:
         // Interpolacao linear com estado entre pacotes. a[0] = amostra anterior, a[1..n] = atual.
         const double n = (double)frames;
         double p = m_pos;
+        size_t estCount = (m_step > 0.0) ? (size_t)std::ceil((n - p) / m_step) + 2 : (size_t)frames;
+        out.reserve(out.size() + estCount * 2);
+
         auto sample = [&](size_t k, int c) -> float {
             if (k == 0) return c == 0 ? m_prevL : m_prevR;
             return m_tmp[(k - 1) * 2 + c];
@@ -680,6 +689,8 @@ AudioExclusionCapturer::SessionResult AudioExclusionCapturer::RunSession(DWORD e
 
     std::vector<float> conv;
     std::vector<float> outStereo;
+    conv.reserve(8192);
+    outStereo.reserve(8192);
     HANDLE waits[2] = { m_hStopEvent, eventGuard.h };
     const DWORD nWaits = eventGuard.h ? 2 : 1;
     const DWORD timeoutMs = eventGuard.h ? 30 : 8;

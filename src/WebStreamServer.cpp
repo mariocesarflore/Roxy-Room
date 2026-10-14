@@ -278,36 +278,56 @@ void WebStreamServer::ClientHandlerThread(SOCKET clientSocket) {
     closesocket(clientSocket);
 }
 
-bool WebStreamServer::SendWebSocketFrame(SOCKET sock, uint8_t opcode, const BYTE* payload, size_t length) {
-    BYTE header[10];
-    int headerLen = 0;
-    header[0] = 0x80 | opcode;
+bool WebStreamServer::SendWebSocketFrameScatter(SOCKET sock, uint8_t opcode, const BYTE* chunkHeader, size_t chunkHeaderLen, const BYTE* payload, size_t payloadLen) {
+    size_t totalPayloadLen = chunkHeaderLen + payloadLen;
+    BYTE wsHeader[10];
+    int wsHeaderLen = 0;
+    wsHeader[0] = 0x80 | opcode;
 
-    if (length <= 125) {
-        header[1] = (uint8_t)length;
-        headerLen = 2;
+    if (totalPayloadLen <= 125) {
+        wsHeader[1] = (uint8_t)totalPayloadLen;
+        wsHeaderLen = 2;
     }
-    else if (length <= 65535) {
-        header[1] = 126;
-        header[2] = (length >> 8) & 0xFF;
-        header[3] = length & 0xFF;
-        headerLen = 4;
+    else if (totalPayloadLen <= 65535) {
+        wsHeader[1] = 126;
+        wsHeader[2] = (totalPayloadLen >> 8) & 0xFF;
+        wsHeader[3] = totalPayloadLen & 0xFF;
+        wsHeaderLen = 4;
     }
     else {
-        header[1] = 127;
+        wsHeader[1] = 127;
         for (int i = 0; i < 8; ++i) {
-            header[2 + i] = (length >> ((7 - i) * 8)) & 0xFF;
+            wsHeader[2 + i] = (totalPayloadLen >> ((7 - i) * 8)) & 0xFF;
         }
-        headerLen = 10;
+        wsHeaderLen = 10;
     }
 
-    int r1 = send(sock, (const char*)header, headerLen, 0);
-    if (r1 == SOCKET_ERROR) return false;
-    if (length > 0) {
-        int r2 = send(sock, (const char*)payload, (int)length, 0);
-        if (r2 == SOCKET_ERROR) return false;
+    WSABUF bufs[3];
+    DWORD bufCount = 0;
+
+    bufs[bufCount].len = (ULONG)wsHeaderLen;
+    bufs[bufCount].buf = reinterpret_cast<char*>(wsHeader);
+    bufCount++;
+
+    if (chunkHeader && chunkHeaderLen > 0) {
+        bufs[bufCount].len = (ULONG)chunkHeaderLen;
+        bufs[bufCount].buf = reinterpret_cast<char*>(const_cast<BYTE*>(chunkHeader));
+        bufCount++;
     }
-    return true;
+
+    if (payload && payloadLen > 0) {
+        bufs[bufCount].len = (ULONG)payloadLen;
+        bufs[bufCount].buf = reinterpret_cast<char*>(const_cast<BYTE*>(payload));
+        bufCount++;
+    }
+
+    DWORD bytesSent = 0;
+    int res = WSASend(sock, bufs, bufCount, &bytesSent, 0, nullptr, nullptr);
+    return (res == 0);
+}
+
+bool WebStreamServer::SendWebSocketFrame(SOCKET sock, uint8_t opcode, const BYTE* payload, size_t length) {
+    return SendWebSocketFrameScatter(sock, opcode, nullptr, 0, payload, length);
 }
 
 void WebStreamServer::BroadcastVideoFrame(const std::vector<BYTE>& frameData, int width, int height) {
@@ -328,17 +348,9 @@ void WebStreamServer::BroadcastVideoFrame(const std::vector<BYTE>& frameData, in
     header[3] = (height >> 8) & 0xFF;
     header[4] = height & 0xFF;
 
-    size_t totalLen = 5 + frameData.size();
-    thread_local std::vector<BYTE> localVideoBuffer;
-    if (localVideoBuffer.size() < totalLen) {
-        localVideoBuffer.resize(totalLen + 65536);
-    }
-    memcpy(localVideoBuffer.data(), header, 5);
-    memcpy(localVideoBuffer.data() + 5, frameData.data(), frameData.size());
-
     std::vector<SOCKET> disconnected;
     for (SOCKET s : clientSnapshot) {
-        if (!SendWebSocketFrame(s, 0x2, localVideoBuffer.data(), totalLen)) {
+        if (!SendWebSocketFrameScatter(s, 0x2, header, sizeof(header), frameData.data(), frameData.size())) {
             disconnected.push_back(s);
         }
     }
@@ -363,26 +375,20 @@ void WebStreamServer::BroadcastAudioChunk(const BYTE* pData, UINT32 size, int sa
         clientSnapshot.assign(m_wsClients.begin(), m_wsClients.end());
     }
 
-    // Header: Type 'A' (1 byte) + Pad (1 byte) + SampleRate (4 bytes) + Channels (2 bytes) = 8 bytes (4-byte aligned)
-    size_t totalLen = 8 + size;
-    thread_local std::vector<BYTE> localAudioBuffer;
-    if (localAudioBuffer.size() < totalLen) {
-        localAudioBuffer.resize(totalLen + 4096);
-    }
-
-    localAudioBuffer[0] = 'A';
-    localAudioBuffer[1] = 0;
-    localAudioBuffer[2] = (sampleRate >> 24) & 0xFF;
-    localAudioBuffer[3] = (sampleRate >> 16) & 0xFF;
-    localAudioBuffer[4] = (sampleRate >> 8) & 0xFF;
-    localAudioBuffer[5] = sampleRate & 0xFF;
-    localAudioBuffer[6] = (channels >> 8) & 0xFF;
-    localAudioBuffer[7] = channels & 0xFF;
-    memcpy(localAudioBuffer.data() + 8, pData, size);
+    // Header: Type 'A' (1 byte) + Pad (1 byte) + SampleRate (4 bytes) + Channels (2 bytes) = 8 bytes
+    BYTE audioHeader[8];
+    audioHeader[0] = 'A';
+    audioHeader[1] = 0;
+    audioHeader[2] = (sampleRate >> 24) & 0xFF;
+    audioHeader[3] = (sampleRate >> 16) & 0xFF;
+    audioHeader[4] = (sampleRate >> 8) & 0xFF;
+    audioHeader[5] = sampleRate & 0xFF;
+    audioHeader[6] = (channels >> 8) & 0xFF;
+    audioHeader[7] = channels & 0xFF;
 
     std::vector<SOCKET> disconnected;
     for (SOCKET s : clientSnapshot) {
-        if (!SendWebSocketFrame(s, 0x2, localAudioBuffer.data(), totalLen)) {
+        if (!SendWebSocketFrameScatter(s, 0x2, audioHeader, sizeof(audioHeader), pData, size)) {
             disconnected.push_back(s);
         }
     }

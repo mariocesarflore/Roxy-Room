@@ -40,6 +40,7 @@ private:
     std::string ReadFileContent(const std::filesystem::path& fullPath);
 
     bool SendWebSocketFrame(SOCKET sock, uint8_t opcode, const BYTE* payload, size_t length);
+    bool SendWebSocketFrameScatter(SOCKET sock, uint8_t opcode, const BYTE* chunkHeader, size_t chunkHeaderLen, const BYTE* payload, size_t payloadLen);
 
     int m_port;
     std::string m_webRoot;

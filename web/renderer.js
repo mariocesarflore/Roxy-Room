@@ -64,14 +64,14 @@ function loadSettings() {
   } catch { settings = {}; }
 
   const cores = navigator.hardwareConcurrency || 4;
-  const defaultFps = cores <= 4 ? '30' : '60';
-  const defaultBitrate = cores <= 4 ? '2500000' : '3500000';
+  const defaultFps = '60';
+  const defaultBitrate = '8000000'; // 8 Mbps baseline for crystal-clear 60fps gaming
 
   document.getElementById('usernameInput').value = settings.username || 'Mario';
   document.getElementById('roomId').value = settings.lastRoom || 'SALA-6863';
   updateAvatar();
   document.getElementById('profilePresetSelect').value = settings.profilePreset || 'auto';
-  document.getElementById('resSelect').value = settings.res || '720';
+  document.getElementById('resSelect').value = settings.res || '1080';
   document.getElementById('fpsSelect').value = settings.fps || defaultFps;
   document.getElementById('bitrateSelect').value = settings.bitrate || defaultBitrate;
   document.getElementById('streamSoundToggle').checked = settings.streamSound !== false;
@@ -826,8 +826,22 @@ function initCleanAudioTrack(excludePid) {
       const f = new Float32Array(buf, 8, frames * channels);
       const ctxRate = _cleanAudioCtx ? _cleanAudioCtx.sampleRate : 48000;
 
-      if (srcRate === ctxRate) {
-        // Caminho normal: o C++ já entrega 48 kHz estéreo
+      if (srcRate === ctxRate && channels === 2) {
+        // Caminho ultra-otimizado (SIMD bulk copy): zero loop e zero modulo por amostra
+        const totalSamples = frames * 2;
+        const availableSpace = AUDIO_RING_CAPACITY - _audioAvailable;
+        const toWrite = Math.min(totalSamples, availableSpace);
+        if (toWrite > 0) {
+          const firstChunk = Math.min(toWrite, AUDIO_RING_CAPACITY - _audioWriteIdx);
+          _audioRing.set(f.subarray(0, firstChunk), _audioWriteIdx);
+          if (toWrite > firstChunk) {
+            _audioRing.set(f.subarray(firstChunk, toWrite), 0);
+          }
+          _audioWriteIdx = (_audioWriteIdx + toWrite) % AUDIO_RING_CAPACITY;
+          _audioAvailable += toWrite;
+        }
+      } else if (srcRate === ctxRate) {
+        // Caminho fallback mono
         for (let i = 0; i < frames; i++) {
           const l = f[i * channels];
           _pushAudioFrame(l, channels > 1 ? f[i * channels + 1] : l);
@@ -996,17 +1010,24 @@ function openAudioAppsPicker(sourceId) {
 
 async function startStream(sourceId, excludePid) {
   const fps = parseInt(document.getElementById('fpsSelect').value) || 60;
-  const targetHeight = parseInt(document.getElementById('resSelect').value) || 720;
+  const targetHeight = parseInt(document.getElementById('resSelect').value) || 1080;
   const targetWidth = Math.round(targetHeight * (16 / 9));
   const audioMode = document.getElementById('audioSelect').value; // 'all', 'exclude', 'false'
   const wantAudio = audioMode !== 'false';
   const useExclusion = audioMode === 'exclude' && excludePid > 0;
 
   const videoConstraints = {
-    width: { ideal: targetWidth, max: targetWidth },
-    height: { ideal: targetHeight, max: targetHeight },
     frameRate: { ideal: fps, max: fps }
   };
+  if (targetHeight < 1080) {
+    // Apenas restringe resolução se o usuário explicitamente escolher modo econômico (720p ou 480p)
+    videoConstraints.width = { ideal: targetWidth, max: targetWidth };
+    videoConstraints.height = { ideal: targetHeight, max: targetHeight };
+  } else {
+    // 1080p / 1440p / QHD: captura na resolução nativa do jogo sem forçar downscale borrado
+    videoConstraints.width = { ideal: targetWidth };
+    videoConstraints.height = { ideal: targetHeight };
+  }
 
   let stream = null;
   let cleanAudioTrack = null;
@@ -1056,6 +1077,14 @@ async function startStream(sourceId, excludePid) {
 
   myStream = stream;
   isStreaming = true;
+
+  // Ultra-low latency optimization: lock 60fps motion & crystal-clear audio
+  try {
+    const vTrack = stream.getVideoTracks()[0];
+    if (vTrack && 'contentHint' in vTrack) vTrack.contentHint = 'motion';
+    const aTrack = stream.getAudioTracks()[0];
+    if (aTrack && 'contentHint' in aTrack) aTrack.contentHint = 'music';
+  } catch(e) {}
 
   // Show self preview in video grid
   showMyStreamCard(stream);
@@ -1177,23 +1206,51 @@ function callPeer(peerId, stream) {
       targetBitrate = Math.min(rawBitrate, Math.floor((totalMaxMbps * 1000000) / peerCount));
     }
 
-    const applyBitrate = () => {
+    // Prioritize hardware-accelerated video codecs (H.264 / VP8)
+    try {
+      if (call.peerConnection && typeof RTCRtpSender.getCapabilities === 'function') {
+        const caps = RTCRtpSender.getCapabilities('video');
+        if (caps && caps.codecs) {
+          const h264 = caps.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264');
+          const others = caps.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
+          const sorted = [...h264, ...others];
+          call.peerConnection.getTransceivers().forEach(tr => {
+            if (tr.sender?.track?.kind === 'video' && typeof tr.setCodecPreferences === 'function') {
+              tr.setCodecPreferences(sorted);
+            }
+          });
+        }
+      }
+    } catch(e) {}
+
+    let currentAdaptedBitrate = targetBitrate;
+    let currentScale = 1.0;
+    let abrInterval = null;
+
+    const applyBitrate = (customBitrate = null, customScale = null) => {
       try {
         if (call.peerConnection) {
+          const bRate = customBitrate !== null ? customBitrate : currentAdaptedBitrate;
+          const sScale = customScale !== null ? customScale : currentScale;
+
           call.peerConnection.getSenders().forEach(sender => {
             if (sender.track && sender.track.kind === 'video') {
               try {
                 const params = sender.getParameters();
                 if (params && params.encodings && params.encodings.length > 0) {
-                  params.encodings[0].maxBitrate = targetBitrate;
+                  params.encodings[0].maxBitrate = bRate;
                   params.encodings[0].maxFramerate = Math.min(fps, 60);
+                  params.encodings[0].networkPriority = 'high';
+                  // Balanced: Preserva resolução nítida e detalhes sem pixelar o jogo
+                  params.degradationPreference = 'balanced';
 
-                  // Scale resolution down before encoding if monitor is 1080p, 1440p, or 4K
+                  let finalScale = sScale;
                   const trackSettings = sender.track.getSettings ? sender.track.getSettings() : {};
                   const trackHeight = trackSettings.height || 0;
-                  if (trackHeight > targetHeight && targetHeight > 0) {
-                    params.encodings[0].scaleResolutionDownBy = Math.max(1, trackHeight / targetHeight);
+                  if (trackHeight > targetHeight && targetHeight > 0 && targetHeight < 1080) {
+                    finalScale = Math.max(sScale, trackHeight / targetHeight);
                   }
+                  params.encodings[0].scaleResolutionDownBy = finalScale;
 
                   sender.setParameters(params).catch(() => {});
                 }
@@ -1204,14 +1261,77 @@ function callPeer(peerId, stream) {
       } catch(e) {}
     };
 
+    // Dynamic Adaptive Bitrate (ABR): Monitoramento inteligente em tempo real
+    // - Rede estável: qualidade máxima cristalina (1080p nativo, alto bitrate).
+    // - Rede oscilando/consumindo muito: reduz progressivamente o bitrate para manter a fluidez sem travar.
+    // - Rede normalizada: recupera automaticamente a qualidade máxima!
+    const startAbrLoop = () => {
+      if (abrInterval) clearInterval(abrInterval);
+      abrInterval = setInterval(async () => {
+        if (!call || !call.peerConnection || call.peerConnection.connectionState === 'closed') {
+          clearInterval(abrInterval);
+          return;
+        }
+        try {
+          const stats = await call.peerConnection.getStats();
+          let rtt = null;
+          let fractionLost = 0;
+
+          stats.forEach(report => {
+            if (report.type === 'remote-inbound-rtp' && report.kind === 'video') {
+              if (typeof report.roundTripTime === 'number') rtt = report.roundTripTime;
+              if (typeof report.fractionLost === 'number') fractionLost = report.fractionLost;
+            } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+              if (typeof report.currentRoundTripTime === 'number') rtt = report.currentRoundTripTime;
+            }
+          });
+
+          // Diagnóstico de estabilidade
+          const isCongested = (fractionLost > 0.035) || (rtt !== null && rtt > 0.260);
+          const isHealthy = (fractionLost < 0.008) && (rtt === null || rtt < 0.150);
+
+          let updated = false;
+          if (isCongested) {
+            // Rede sob pressão: reduz suavemente (-15%) com piso seguro de 2.5 Mbps
+            const minFloor = 2500000;
+            if (currentAdaptedBitrate > minFloor) {
+              currentAdaptedBitrate = Math.max(minFloor, Math.floor(currentAdaptedBitrate * 0.85));
+              updated = true;
+            }
+            // Congestionamento grave (> 10% perda): leve ajuste de escala para não travar
+            if (fractionLost > 0.10 && currentScale < 1.33) {
+              currentScale = 1.33;
+              updated = true;
+            }
+          } else if (isHealthy) {
+            // Conexão limpa: retorna para a qualidade máxima cristalina 100% nítida
+            if (currentAdaptedBitrate < targetBitrate) {
+              currentAdaptedBitrate = Math.min(targetBitrate, Math.floor(currentAdaptedBitrate * 1.15));
+              updated = true;
+            }
+            if (currentScale > 1.0) {
+              currentScale = 1.0;
+              updated = true;
+            }
+          }
+
+          if (updated) {
+            applyBitrate(currentAdaptedBitrate, currentScale);
+          }
+        } catch (e) {}
+      }, 2000);
+    };
+
     if (call.peerConnection) {
       call.peerConnection.addEventListener('connectionstatechange', () => {
         const state = call.peerConnection?.connectionState;
         if (state === 'connected') {
           connInfo._isCalling = false;
           applyBitrate();
+          startAbrLoop();
         } else if (state === 'failed' || state === 'closed') {
           connInfo._isCalling = false;
+          if (abrInterval) clearInterval(abrInterval);
           if (connInfo.outgoingCall === call) {
             delete connInfo.outgoingCall;
           }
@@ -1221,6 +1341,7 @@ function callPeer(peerId, stream) {
 
     call.on('close', () => {
       connInfo._isCalling = false;
+      if (abrInterval) clearInterval(abrInterval);
       if (connInfo.outgoingCall === call) {
         delete connInfo.outgoingCall;
       }
@@ -1228,6 +1349,7 @@ function callPeer(peerId, stream) {
 
     call.on('error', (err) => {
       connInfo._isCalling = false;
+      if (abrInterval) clearInterval(abrInterval);
       console.warn(`[WebRTC] Erro na chamada com ${peerId}:`, err);
       if (connInfo.outgoingCall === call) {
         delete connInfo.outgoingCall;
@@ -1258,6 +1380,22 @@ function handleIncomingCall(call) {
 
   // Answer call to receive remote stream
   call.answer();
+
+  // Zero-latency presentation: bypass Chromium default 100-200ms jitter buffer
+  try {
+    if (call.peerConnection) {
+      call.peerConnection.getReceivers().forEach(r => {
+        if ('playoutDelayHint' in r) r.playoutDelayHint = 0;
+        if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0;
+      });
+      call.peerConnection.addEventListener('track', (e) => {
+        if (e.receiver) {
+          if ('playoutDelayHint' in e.receiver) e.receiver.playoutDelayHint = 0;
+          if ('jitterBufferTarget' in e.receiver) e.receiver.jitterBufferTarget = 0;
+        }
+      });
+    }
+  } catch(e) {}
 
   if (!activeConnections[peerId]) activeConnections[peerId] = {};
   activeConnections[peerId].incomingCall = call;
@@ -1299,6 +1437,7 @@ function showMyStreamCard(stream) {
   }
   const video = card.querySelector('video');
   video.srcObject = stream;
+  if ('playoutDelayHint' in video) video.playoutDelayHint = 0;
   video.muted = true; // Always mute self to avoid echo
   video.play().catch(() => {});
   updatePlaceholder();
@@ -1315,6 +1454,7 @@ function showRemoteStreamCard(peerId, name, stream) {
   }
   const video = card.querySelector('video');
   video.srcObject = stream;
+  if ('playoutDelayHint' in video) video.playoutDelayHint = 0;
   video.playsInline = true;
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
@@ -2088,27 +2228,26 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 
 document.getElementById('profilePresetSelect').addEventListener('change', (e) => {
   const val = e.target.value;
-  const cores = navigator.hardwareConcurrency || 4;
   if (val === 'weak') {
-    document.getElementById('resSelect').value = '480';
-    document.getElementById('fpsSelect').value = '30';
-    document.getElementById('bitrateSelect').value = '1500000';
-    showToast('🐢 Perfil PC Fraco: 480p / 30 FPS / 1.5 Mbps');
-  } else if (val === 'balanced') {
     document.getElementById('resSelect').value = '720';
     document.getElementById('fpsSelect').value = '30';
-    document.getElementById('bitrateSelect').value = '3500000';
-    showToast('⚖️ Perfil PC Médio: 720p / 30 FPS / 3.5 Mbps');
-  } else if (val === 'high') {
+    document.getElementById('bitrateSelect').value = '2000000';
+    showToast('🐢 Conexão Fraca: 720p / 30 FPS / 2.0 Mbps');
+  } else if (val === 'balanced') {
     document.getElementById('resSelect').value = '1080';
     document.getElementById('fpsSelect').value = '60';
     document.getElementById('bitrateSelect').value = '6000000';
-    showToast('🚀 Perfil PC Forte: 1080p / 60 FPS / 6.0 Mbps');
+    showToast('⚖️ Perfil Equilibrado: 1080p / 60 FPS / 6.0 Mbps');
+  } else if (val === 'high') {
+    document.getElementById('resSelect').value = '1080';
+    document.getElementById('fpsSelect').value = '60';
+    document.getElementById('bitrateSelect').value = '10000000';
+    showToast('🚀 Gamer Ultra: 1080p / 60 FPS / 10 Mbps');
   } else {
-    document.getElementById('resSelect').value = '720';
-    document.getElementById('fpsSelect').value = cores <= 4 ? '30' : '60';
-    document.getElementById('bitrateSelect').value = cores <= 4 ? '2500000' : '3500000';
-    showToast(`✨ Auto-ajuste para ${cores} núcleos de CPU`);
+    document.getElementById('resSelect').value = '1080';
+    document.getElementById('fpsSelect').value = '60';
+    document.getElementById('bitrateSelect').value = '8000000';
+    showToast('✨ Dinâmico Inteligente: 1080p / 60 FPS / 8.0 Mbps');
   }
 });
 
@@ -2555,7 +2694,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '0.9.0';
+const CURRENT_VERSION = '1.1.0';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

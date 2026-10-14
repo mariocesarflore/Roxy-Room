@@ -23,7 +23,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path bin
           rc /fo bin\app.res src\app.rc
-          cl /EHsc /std:c++17 /utf-8 /O2 /W1 `
+          cl /EHsc /std:c++17 /utf-8 /O2 /Ot /Oi /Gy /Gw /fp:fast /W1 `
              src\main.cpp `
              src\TrayIcon.cpp `
              src\HotkeyManager.cpp `
@@ -41,7 +41,7 @@ jobs:
              mmdevapi.lib avrt.lib d3d11.lib dxgi.lib d3dcompiler.lib `
              ws2_32.lib advapi32.lib crypt32.lib user32.lib shell32.lib ole32.lib gdi32.lib `
              shlwapi.lib version.lib dwmapi.lib `
-             /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup
+             /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup /OPT:REF /OPT:ICF
           Copy-Item packages\webview2\lib\WebView2Loader.dll bin\ -Force
           Copy-Item -Recurse web bin\web -Force
 

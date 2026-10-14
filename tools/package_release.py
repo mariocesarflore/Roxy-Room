@@ -81,15 +81,21 @@ def main():
     base_dir = get_base_dir()
     os.chdir(base_dir)
 
-    new_version = sys.argv[1] if len(sys.argv) > 1 else "1.0.1"
-    changelog = sys.argv[2] if len(sys.argv) > 2 else "Melhorias gerais e atualizacoes de estabilidade."
+    version_file = os.path.join(base_dir, "version.json")
+    if os.path.exists(version_file) and len(sys.argv) <= 1:
+        with open(version_file, "r", encoding="utf-8") as f:
+            vdata = json.load(f)
+            new_version = vdata.get("version", "1.1.0")
+            changelog = vdata.get("changelog", "Otimizacao Suprema: Bitrate adaptativo ABR, 1080p nativo para jogos, zero-copy socket e aceleracao D3D11.")
+    else:
+        new_version = sys.argv[1] if len(sys.argv) > 1 else "1.1.0"
+        changelog = sys.argv[2] if len(sys.argv) > 2 else "Otimizacao Suprema: Bitrate adaptativo ABR, 1080p nativo para jogos, zero-copy socket e aceleracao D3D11."
 
     print("==================================================")
     print(f"  Roxy Room - Empacotador de Releases v{new_version}")
     print("==================================================")
 
     # 1. Update version.json
-    version_file = os.path.join(base_dir, "version.json")
     version_data = {
         "version": new_version,
         "name": "Roxy Room",

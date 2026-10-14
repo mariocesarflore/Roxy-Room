@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Roxy Room",
-  "changelog": "Lancamento Oficial v1.0.0",
+  "changelog": "Otimizacao Suprema: Qualidade nativa 1080p para jogos, Bitrate Dinamico Adaptativo (ABR), DirectFlip D3D11 e transmissao zero-copy.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

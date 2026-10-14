@@ -9,7 +9,7 @@ set WV2_LIB=packages\webview2\lib
 
 rc /fo bin\app.res src\app.rc
 
-cl /EHsc /std:c++17 /utf-8 /O2 /W1 ^
+cl /EHsc /std:c++17 /utf-8 /O2 /Ot /Oi /Gy /Gw /fp:fast /W1 ^
    src\main.cpp ^
    src\TrayIcon.cpp ^
    src\HotkeyManager.cpp ^
@@ -28,7 +28,7 @@ cl /EHsc /std:c++17 /utf-8 /O2 /W1 ^
    ws2_32.lib advapi32.lib crypt32.lib ^
    user32.lib shell32.lib ole32.lib gdi32.lib ^
    shlwapi.lib version.lib dwmapi.lib ^
-   /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup
+   /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup /OPT:REF /OPT:ICF
 
 if %ERRORLEVEL% == 0 (
     echo [OK] COMPILACAO CONCLUIDA COM SUCESSO!
