@@ -59,11 +59,11 @@ void StartScreenShareBarSuppressor() {
         while (!g_stopSuppressor.load()) {
             if (!g_isStreaming.load()) {
                 barHidden = false;
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
                 continue;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(barHidden ? 1000 : 350));
+            std::this_thread::sleep_for(std::chrono::milliseconds(barHidden ? 3000 : 1200));
             if (g_stopSuppressor.load() || !g_isStreaming.load()) continue;
 
             EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
@@ -73,6 +73,14 @@ void StartScreenShareBarSuppressor() {
                 if (g_nativePlayer) {
                     HWND nHwnd = g_nativePlayer->GetHWND();
                     if (nHwnd && (hwnd == nHwnd || IsChild(nHwnd, hwnd))) return TRUE;
+                }
+
+                // STRICT PID CHECK: Only inspect windows created by our own WebView2 or our process
+                // This completely eliminates cross-process window message inspection of Discord, VS Code, Chrome, etc.!
+                DWORD winPid = 0;
+                GetWindowThreadProcessId(hwnd, &winPid);
+                if (winPid == 0 || (winPid != g_webviewBrowserPid && winPid != GetCurrentProcessId())) {
+                    return TRUE;
                 }
 
                 // Check class name
@@ -327,10 +335,16 @@ void CleanExit() {
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_SIZE:
-        if (g_controller && wParam != SIZE_MINIMIZED) {
-            RECT bounds;
-            GetClientRect(hwnd, &bounds);
-            g_controller->put_Bounds(bounds);
+        if (g_controller) {
+            if (wParam == SIZE_MINIMIZED) {
+                // When minimized, stop all raster and composition pipelines
+                g_controller->put_IsVisible(FALSE);
+            } else {
+                g_controller->put_IsVisible(TRUE);
+                RECT bounds;
+                GetClientRect(hwnd, &bounds);
+                g_controller->put_Bounds(bounds);
+            }
         }
         break;
 
@@ -566,6 +580,7 @@ void OnWebMessageReceived(ICoreWebView2* sender, ICoreWebView2WebMessageReceived
     } else if (msg == L"quit") {
         CleanExit();
     } else if (msg == L"hideToTray" || msg == L"minimize") {
+        if (g_controller) g_controller->put_IsVisible(FALSE);
         ShowWindow(g_hwnd, SW_HIDE);
     } else if (msg == L"openFirewall") {
         WCHAR exePath[MAX_PATH];
@@ -688,14 +703,19 @@ void InitWebView2(HWND hwnd) {
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     options->put_AdditionalBrowserArguments(
         L"--autoplay-policy=no-user-gesture-required "
-        L"--enable-features=WebRtcHardwareVideoEncoding,WebRtcHardwareVideoDecoding,WebRtcHideLocalIpsWithMdns,ZeroCopy "
-        L"--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,ThrottleDisplayNoneAndDisplayInlineCSS "
-        L"--disable-renderer-backgrounding "
-        L"--disable-background-timer-throttling "
-        L"--disable-backgrounding-occluded-windows "
+        L"--enable-features=WebRtcHardwareVideoEncoding,WebRtcHardwareVideoDecoding,VaapiVideoDecoder,VaapiVideoEncoder,PlatformHEVCDecoderSupport "
+        L"--enable-accelerated-video-decode "
+        L"--enable-accelerated-video-encode "
+        L"--enable-webrtc-hardware-video-encoding "
+        L"--enable-webrtc-hardware-video-decoding "
+        L"--use-gl=angle "
+        L"--use-angle=d3d11 "
         L"--enable-gpu-rasterization "
+        L"--enable-native-gpu-memory-buffers "
         L"--enable-zero-copy "
         L"--ignore-gpu-blocklist "
+        L"--disable-gpu-driver-bug-workarounds "
+        L"--disable-infobars "
         L"--force-gpu-mem-available-mb=1024"
     );
 
@@ -888,6 +908,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         if (id == ID_TRAY_SHOW) {
             ShowWindow(g_hwnd, SW_SHOW);
             ShowWindow(g_hwnd, SW_RESTORE);
+            if (g_controller) g_controller->put_IsVisible(TRUE);
             SetForegroundWindow(g_hwnd);
         } else if (id == ID_TRAY_QUIT) {
             CleanExit();

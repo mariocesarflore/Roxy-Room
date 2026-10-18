@@ -736,16 +736,24 @@ function initCleanAudioTrack(excludePid) {
 
       // Toca o que houver; se faltar, completa com silêncio e reinicia o colchão
       const framesAvail = Math.min(frameCount, _audioAvailable >> 1);
-      for (let i = 0; i < framesAvail; i++) {
-        outL[i] = _audioRing[_audioReadIdx];
-        _audioReadIdx = (_audioReadIdx + 1) % AUDIO_RING_CAPACITY;
-        outR[i] = _audioRing[_audioReadIdx];
-        _audioReadIdx = (_audioReadIdx + 1) % AUDIO_RING_CAPACITY;
+      const samplesToRead = framesAvail * 2;
+      let rIdx = _audioReadIdx;
+      if (rIdx + samplesToRead <= AUDIO_RING_CAPACITY) {
+        for (let i = 0; i < framesAvail; i++) {
+          outL[i] = _audioRing[rIdx++];
+          outR[i] = _audioRing[rIdx++];
+        }
+        _audioReadIdx = (rIdx === AUDIO_RING_CAPACITY) ? 0 : rIdx;
+      } else {
+        for (let i = 0; i < framesAvail; i++) {
+          outL[i] = _audioRing[rIdx];
+          rIdx = (rIdx + 1) % AUDIO_RING_CAPACITY;
+          outR[i] = _audioRing[rIdx];
+          rIdx = (rIdx + 1) % AUDIO_RING_CAPACITY;
+        }
+        _audioReadIdx = rIdx;
       }
-      for (let i = 0; i < framesAvail; i += 16) {
-        const a = Math.abs(outL[i]); if (a > _audioOutPeak) _audioOutPeak = a;
-      }
-      _audioAvailable -= framesAvail * 2;
+      _audioAvailable -= samplesToRead;
       if (framesAvail < frameCount) {
         for (let i = framesAvail; i < frameCount; i++) { outL[i] = 0; outR[i] = 0; }
         _audioPrimed = false;
@@ -1206,14 +1214,25 @@ function callPeer(peerId, stream) {
       targetBitrate = Math.min(rawBitrate, Math.floor((totalMaxMbps * 1000000) / peerCount));
     }
 
-    // Prioritize hardware-accelerated video codecs (H.264 / VP8)
+    // Prioritize hardware-accelerated video codecs (H.264 packetization-mode=1 / VP8)
     try {
       if (call.peerConnection && typeof RTCRtpSender.getCapabilities === 'function') {
         const caps = RTCRtpSender.getCapabilities('video');
         if (caps && caps.codecs) {
-          const h264 = caps.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264');
-          const others = caps.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
-          const sorted = [...h264, ...others];
+          // Hardware H.264 profiles (packetization-mode=1, profile 42e01f / 4d001f / 64001f)
+          const h264Hw = caps.codecs.filter(c => 
+            c.mimeType.toLowerCase() === 'video/h264' &&
+            c.sdpFmtpLine && c.sdpFmtpLine.includes('packetization-mode=1')
+          );
+          const h264Rest = caps.codecs.filter(c => 
+            c.mimeType.toLowerCase() === 'video/h264' &&
+            (!c.sdpFmtpLine || !c.sdpFmtpLine.includes('packetization-mode=1'))
+          );
+          const vp8 = caps.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp8');
+          const others = caps.codecs.filter(c => 
+            c.mimeType.toLowerCase() !== 'video/h264' && c.mimeType.toLowerCase() !== 'video/vp8'
+          );
+          const sorted = [...h264Hw, ...vp8, ...h264Rest, ...others];
           call.peerConnection.getTransceivers().forEach(tr => {
             if (tr.sender?.track?.kind === 'video' && typeof tr.setCodecPreferences === 'function') {
               tr.setCodecPreferences(sorted);
@@ -1241,8 +1260,8 @@ function callPeer(peerId, stream) {
                   params.encodings[0].maxBitrate = bRate;
                   params.encodings[0].maxFramerate = Math.min(fps, 60);
                   params.encodings[0].networkPriority = 'high';
-                  // Balanced: Preserva resolução nítida e detalhes sem pixelar o jogo
-                  params.degradationPreference = 'balanced';
+                  // Maintain-framerate: Mantém os 60 FPS fluidos sem sobrecarregar a CPU
+                  params.degradationPreference = 'maintain-framerate';
 
                   let finalScale = sScale;
                   const trackSettings = sender.track.getSettings ? sender.track.getSettings() : {};
@@ -1506,6 +1525,10 @@ function toggleFocusStreamCard(targetCard) {
   if (isCurrentlyFocused) {
     grid.classList.remove('has-focused');
     showToast('👥 Modo Grade: exibindo todas as telas');
+    // Retoma reprodução de todos os vídeos que estavam pausados em segundo plano
+    document.querySelectorAll('.stream-card video').forEach(v => {
+      if (v.paused && v.srcObject) v.play().catch(() => {});
+    });
   } else {
     grid.classList.add('has-focused');
     targetCard.classList.add('focused');
@@ -1514,8 +1537,33 @@ function toggleFocusStreamCard(targetCard) {
     if (txt) txt.textContent = 'Grade';
     if (ico) ico.textContent = '🗗';
     showToast('⛶ Tela Cheia ativada (clique para voltar à grade ou aperte Esc)');
+    // Pausa decodificação dos vídeos em segundo plano para economizar 100% de CPU/GPU
+    document.querySelectorAll('.stream-card:not(.focused) video').forEach(v => {
+      if (!v.paused) v.pause();
+    });
+    const targetVideo = targetCard.querySelector('video');
+    if (targetVideo && targetVideo.paused && targetVideo.srcObject) {
+      targetVideo.play().catch(() => {});
+    }
   }
 }
+
+// Otimização de segundo plano: quando o app é minimizado ou fica em segundo plano,
+// pausa o preview da própria tela para não gastar GPU/CPU duplicada (a transmissão WebRTC continua 100% ativa)
+document.addEventListener('visibilitychange', () => {
+  const selfVideo = document.querySelector('#stream-self video');
+  if (selfVideo && selfVideo.srcObject) {
+    if (document.hidden) {
+      selfVideo.pause();
+    } else {
+      const isGridOrSelfFocused = !document.getElementById('videoGrid')?.classList.contains('has-focused') ||
+                                  document.getElementById('stream-self')?.classList.contains('focused');
+      if (isGridOrSelfFocused) {
+        selfVideo.play().catch(() => {});
+      }
+    }
+  }
+});
 
 function createStreamCard(id, name, isHostUser) {
   const isSelf = id === 'stream-self';
@@ -2694,7 +2742,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.1.3';
+const CURRENT_VERSION = '1.1.4';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

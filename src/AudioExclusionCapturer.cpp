@@ -693,12 +693,11 @@ AudioExclusionCapturer::SessionResult AudioExclusionCapturer::RunSession(DWORD e
     outStereo.reserve(8192);
     HANDLE waits[2] = { m_hStopEvent, eventGuard.h };
     const DWORD nWaits = eventGuard.h ? 2 : 1;
-    const DWORD timeoutMs = eventGuard.h ? 30 : 8;
+    const DWORD timeoutMs = eventGuard.h ? 30 : 12;
 
     SessionResult result = SessionResult::Stopped;
     ULONGLONG lastStat = GetTickCount64();
     UINT64 packets = 0, silentPackets = 0;
-    float peak = 0.0f;
     bool done = false;
 
     while (m_isCapturing && !done) {
@@ -737,7 +736,6 @@ AudioExclusionCapturer::SessionResult AudioExclusionCapturer::RunSession(DWORD e
                 outStereo.clear();
                 resampler.Process(conv.data(), frames, outStereo);
                 if (!outStereo.empty()) {
-                    for (float v : outStereo) { float a = v < 0 ? -v : v; if (a > peak) peak = a; }
                     m_audioCallback(reinterpret_cast<const BYTE*>(outStereo.data()),
                                     (UINT32)(outStereo.size() / 2), &m_waveFormat);
                 }
@@ -750,10 +748,9 @@ AudioExclusionCapturer::SessionResult AudioExclusionCapturer::RunSession(DWORD e
         ULONGLONG now = GetTickCount64();
         if (now - lastStat >= 10000) {
             AudioLog(L"Stats 10s: pacotes=" + std::to_wstring(packets) + L" silenciosos=" +
-                     std::to_wstring(silentPackets) + L" pico=" + std::to_wstring(peak));
+                     std::to_wstring(silentPackets));
             lastStat = now;
             packets = silentPackets = 0;
-            peak = 0.0f;
         }
     }
 
