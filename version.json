@@ -1,7 +1,7 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.7",
   "name": "Roxy Room",
-  "changelog": "Corrige recursão ao abrir o modal de perfil do Discord dentro de uma sala e remove placeholders de nome padrão.",
+  "changelog": "Centraliza o ícone de fechar (X) no modal de perfil do Discord.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }
