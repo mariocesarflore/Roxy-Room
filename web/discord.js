@@ -20,6 +20,7 @@
     requestVoiceRpc: DISCORD_APP_CONFIG.requestVoiceRpc,
     accessToken: '',
     tokenExpiresAt: 0,
+    presenceStatus: 'online',
     customStatus: 'Transmitindo uma nova aventura em Roxy Room',
     serverPort: 8085,
     pkceVerifier: '',
@@ -34,6 +35,7 @@
     voiceError: null,
     ipcConnected: false,
     discordRunning: false,
+    voiceLocal: { inCall: false, startedAt: 0 },
     spotifyLocal: { running: false, playing: false, title: '', artist: '', track: '' },
 
     // Roxy Room live state
@@ -56,6 +58,9 @@
       const parsed = JSON.parse(raw);
       if (parsed.accessToken) state.accessToken = String(parsed.accessToken);
       if (parsed.tokenExpiresAt) state.tokenExpiresAt = Number(parsed.tokenExpiresAt) || 0;
+      if (parsed.presenceStatus && ['online', 'idle', 'dnd', 'offline'].includes(parsed.presenceStatus)) {
+        state.presenceStatus = parsed.presenceStatus;
+      }
       if (parsed.customStatus) state.customStatus = String(parsed.customStatus);
       if (parsed.apiUser) state.apiUser = parsed.apiUser;
       if (parsed.guilds) state.guilds = parsed.guilds;
@@ -72,6 +77,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         accessToken: state.accessToken,
         tokenExpiresAt: state.tokenExpiresAt,
+        presenceStatus: state.presenceStatus,
         customStatus: state.customStatus,
         apiUser: state.apiUser,
         guilds: state.guilds,
@@ -156,11 +162,25 @@
     return (input && input.value.trim()) || 'Usuário';
   }
 
+  const PRESENCE_STATUS_META = {
+    online: { key: 'online', label: 'online' },
+    idle: { key: 'idle', label: 'Ausente' },
+    dnd: { key: 'dnd', label: 'Não perturbar' },
+    offline: { key: 'offline', label: 'Invisível' },
+  };
+
   function getEffectiveOnlineStatus() {
-    if (state.apiUser || state.ipcConnected || state.discordRunning || state.roomConnected) {
-      return { key: 'online', label: 'online' };
-    }
-    return { key: 'online', label: 'online' };
+    return PRESENCE_STATUS_META[state.presenceStatus] || PRESENCE_STATUS_META.online;
+  }
+
+  function setPresenceStatus(nextKey) {
+    if (!PRESENCE_STATUS_META[nextKey]) return;
+    state.presenceStatus = nextKey;
+    saveState();
+    pushRichPresence();
+    renderAll();
+    document.getElementById('dpStatusWrap')?.classList.remove('open');
+    document.getElementById('dpStatusPill')?.setAttribute('aria-expanded', 'false');
   }
 
   // ─── PKCE Crypto Helpers ────────────────────────────────────────────────────
@@ -270,6 +290,9 @@
     if (dpStatusPill) dpStatusPill.className = 'dp-status-pill ' + status.key;
     const dpStatusText = document.getElementById('dpStatusText');
     if (dpStatusText) dpStatusText.textContent = status.label;
+    document.querySelectorAll('#dpStatusMenu .dp-status-opt').forEach((opt) => {
+      opt.classList.toggle('active', opt.dataset.status === status.key);
+    });
 
     // 3. Name & Username Tag
     const dpName = document.getElementById('dpDisplayName');
@@ -448,6 +471,23 @@
       const countText = limit > 0 ? `${participants}/${limit}` : `${participants}`;
       const subText = `${displayName} • ${countText} conectados no Discord`;
       if (subEl) { subEl.textContent = subText; subEl.title = subText; }
+    } else if (state.voiceLocal && state.voiceLocal.inCall) {
+      if (boxEl) boxEl.className = 'dp-voice-box';
+      if (dotEl) dotEl.className = 'dp-voice-dot';
+      if (eqEl) eqEl.className = 'dp-voice-eq';
+      if (nameEl) {
+        nameEl.textContent = 'Chamada de voz no Discord';
+        nameEl.title = 'Chamada de voz ativa detectada no Discord';
+      }
+      if (subEl) {
+        const startedAt = Number(state.voiceLocal.startedAt) || 0;
+        const elapsed = startedAt > 0 ? formatDuration(Date.now() - startedAt) : '';
+        const subText = elapsed
+          ? `${displayName} • em call há ${elapsed}`
+          : `${displayName} • chamada de voz ativa`;
+        subEl.textContent = subText;
+        subEl.title = subText;
+      }
     } else {
       if (boxEl) boxEl.className = 'dp-voice-box idle';
       if (dotEl) dotEl.className = 'dp-voice-dot idle';
@@ -458,8 +498,8 @@
       }
       if (subEl) {
         let subText = 'Entre em uma call no Discord';
-        if (state.apiUser && !state.requestVoiceRpc) {
-          subText = 'Canal de voz requer escopo RPC aprovado no app';
+        if (state.apiUser && !state.requestVoiceRpc && !state.discordRunning) {
+          subText = 'Discord desktop não detectado';
         } else if (state.voiceError) {
           subText = 'RPC de Voz aguarda permissão do app Discord';
         } else if (!state.discordRunning) {
@@ -593,6 +633,10 @@
 
   function pushRichPresence() {
     if (!state.ipcConnected) return;
+    if (state.presenceStatus === 'offline') {
+      bridgeSend('discord:setActivity:' + JSON.stringify({ clear: true }));
+      return;
+    }
     const activeRoom = (state.roomId || 'SALA-6863').trim();
     const payload = {
       details: state.isStreaming
@@ -820,6 +864,16 @@
 
       case 'discordLocalStatus': {
         state.discordRunning = !!data.discordRunning;
+        if (data.voice) {
+          const prevInCall = !!(state.voiceLocal && state.voiceLocal.inCall);
+          const prevStart = (state.voiceLocal && state.voiceLocal.startedAt) || 0;
+          const nextInCall = !!data.voice.inCall;
+          let nextStart = Number(data.voice.startedAt) || 0;
+          if (nextInCall && nextStart <= 0) {
+            nextStart = prevInCall && prevStart > 0 ? prevStart : Date.now();
+          }
+          state.voiceLocal = { inCall: nextInCall, startedAt: nextInCall ? nextStart : 0 };
+        }
         if (data.spotify) state.spotifyLocal = data.spotify;
         renderProfileSidebar();
         renderSpotifyCard();
@@ -830,7 +884,7 @@
   }
 
   // ─── DOM Events ─────────────────────────────────────────────────────────────
-  function openModal() {
+  function openModal(opts = {}) {
     const modal = document.getElementById('discordProfileModal');
     if (!modal) return;
     bridgeSend('discord:pollLocal');
@@ -843,21 +897,65 @@
     } catch (e) {
       console.error('Erro ao renderizar modal Discord:', e);
     }
+    const statusWrap = document.getElementById('dpStatusWrap');
+    const statusPill = document.getElementById('dpStatusPill');
+    if (statusWrap) {
+      const shouldOpen = !!opts.openStatusMenu;
+      statusWrap.classList.toggle('open', shouldOpen);
+      statusPill?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    }
     modal.classList.add('active');
   }
 
   function closeModal() {
+    document.getElementById('dpStatusWrap')?.classList.remove('open');
+    document.getElementById('dpStatusPill')?.setAttribute('aria-expanded', 'false');
     document.getElementById('discordProfileModal')?.classList.remove('active');
   }
 
   function initEvents() {
     const trigger = document.getElementById('profileCardTrigger');
     if (trigger) {
-      trigger.addEventListener('click', openModal);
+      trigger.addEventListener('click', () => openModal());
       trigger.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           openModal();
+        }
+      });
+    }
+
+    document.getElementById('profileOnlinePill')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openModal({ openStatusMenu: true });
+    });
+
+    const statusWrap = document.getElementById('dpStatusWrap');
+    const statusPill = document.getElementById('dpStatusPill');
+    const statusMenu = document.getElementById('dpStatusMenu');
+    if (statusWrap && statusPill && statusMenu) {
+      statusPill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nextOpen = !statusWrap.classList.contains('open');
+        statusWrap.classList.toggle('open', nextOpen);
+        statusPill.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+      });
+      statusMenu.querySelectorAll('.dp-status-opt').forEach((opt) => {
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setPresenceStatus(opt.dataset.status);
+        });
+      });
+      document.addEventListener('click', (e) => {
+        if (!statusWrap.contains(e.target)) {
+          statusWrap.classList.remove('open');
+          statusPill.setAttribute('aria-expanded', 'false');
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && statusWrap.classList.contains('open')) {
+          statusWrap.classList.remove('open');
+          statusPill.setAttribute('aria-expanded', 'false');
         }
       });
     }
@@ -972,11 +1070,15 @@
       renderVoiceCard();
     },
     openModal,
+    getStatus() {
+      return getEffectiveOnlineStatus().key;
+    },
     getProfileIdentity() {
       const u = getActiveUser();
       return {
         name: getLocalDisplayName(),
         avatarUrl: u ? getAvatarUrl(u) : '',
+        status: getEffectiveOnlineStatus().key,
       };
     },
   };
@@ -1006,10 +1108,13 @@
     }
   }
 
-  // Live timer tick for streaming elapsed time
+  // Live timer tick for streaming elapsed time & active voice call duration
   activityTimerInterval = setInterval(() => {
     if (state.isStreaming) {
       renderCurrentActivity();
+    }
+    if (!state.voiceChannel && state.voiceLocal && state.voiceLocal.inCall) {
+      renderVoiceCard();
     }
   }, 1000);
 

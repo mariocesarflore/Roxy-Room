@@ -458,9 +458,42 @@
             <div class="dp-username-tag" id="dpUsernameTag">@usuario • Conecte sua conta Discord</div>
           </div>
 
-          <div class="dp-status-pill online" id="dpStatusPill">
-            <span class="dp-status-dot"></span>
-            <span id="dpStatusText">online</span>
+          <div class="dp-status-wrap" id="dpStatusWrap">
+            <button type="button" class="dp-status-pill online" id="dpStatusPill" aria-haspopup="true" aria-expanded="false" title="Alterar status de presença">
+              <span class="dp-status-dot"></span>
+              <span id="dpStatusText">online</span>
+              <svg class="dp-status-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="dp-status-menu" id="dpStatusMenu" role="menu">
+              <button type="button" class="dp-status-opt active" data-status="online" role="menuitem">
+                <span class="dp-opt-icon online"></span>
+                <div class="dp-opt-text">
+                  <span class="dp-opt-title">online</span>
+                  <span class="dp-opt-sub">Disponível e ativo na sala</span>
+                </div>
+              </button>
+              <button type="button" class="dp-status-opt" data-status="idle" role="menuitem">
+                <span class="dp-opt-icon idle"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+                <div class="dp-opt-text">
+                  <span class="dp-opt-title">Ausente</span>
+                  <span class="dp-opt-sub">Indica que você está ausente</span>
+                </div>
+              </button>
+              <button type="button" class="dp-status-opt" data-status="dnd" role="menuitem">
+                <span class="dp-opt-icon dnd"><span class="dp-opt-dash"></span></span>
+                <div class="dp-opt-text">
+                  <span class="dp-opt-title">Não perturbar</span>
+                  <span class="dp-opt-sub">Silencia sons de notificação</span>
+                </div>
+              </button>
+              <button type="button" class="dp-status-opt" data-status="offline" role="menuitem">
+                <span class="dp-opt-icon offline"></span>
+                <div class="dp-opt-text">
+                  <span class="dp-opt-title">Invisível</span>
+                  <span class="dp-opt-sub">Oculta Rich Presence e aparece off-line</span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 

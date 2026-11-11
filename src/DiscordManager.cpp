@@ -1,9 +1,12 @@
 #include "DiscordManager.h"
 #include <winhttp.h>
 #include <tlhelp32.h>
+#include <mmdeviceapi.h>
+#include <audiopolicy.h>
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <set>
 #include <chrono>
 #include <cctype>
 
@@ -334,11 +337,138 @@ static std::vector<DWORD> FindProcessIdsByExe(const wchar_t* exeName) {
     return pids;
 }
 
+struct DiscordVoiceProbeResult {
+    bool inCall = false;
+    long long startedAtMs = 0;
+};
+
+static ULONGLONG FileTimeToU64(const FILETIME& ft) {
+    ULARGE_INTEGER u;
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    return u.QuadPart;
+}
+
+static DiscordVoiceProbeResult ProbeDiscordLocalVoiceCall(const std::vector<DWORD>& discordPids) {
+    DiscordVoiceProbeResult res;
+    if (discordPids.empty()) return res;
+
+    std::set<DWORD> pidSet(discordPids.begin(), discordPids.end());
+    std::set<std::wstring> encodedExePaths;
+    ULONGLONG earliestProcStart = 0;
+
+    for (DWORD pid : discordPids) {
+        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!hProc) continue;
+
+        WCHAR imgPath[MAX_PATH * 2] = {};
+        DWORD sz = MAX_PATH * 2;
+        if (QueryFullProcessImageNameW(hProc, 0, imgPath, &sz) && sz > 0) {
+            std::wstring encoded(imgPath, sz);
+            for (wchar_t& ch : encoded) {
+                if (ch == L'\\') ch = L'#';
+            }
+            encodedExePaths.insert(encoded);
+        }
+
+        FILETIME ftCreate = {}, ftExit = {}, ftKernel = {}, ftUser = {};
+        if (GetProcessTimes(hProc, &ftCreate, &ftExit, &ftKernel, &ftUser)) {
+            ULONGLONG t = FileTimeToU64(ftCreate);
+            if (t > 0 && (earliestProcStart == 0 || t < earliestProcStart)) {
+                earliestProcStart = t;
+            }
+        }
+        CloseHandle(hProc);
+    }
+
+    // 1. Official Windows Microphone ConsentStore for the currently running Discord executable
+    for (const auto& encoded : encodedExePaths) {
+        std::wstring subKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone\\NonPackaged\\" + encoded;
+        HKEY hKey = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, subKey.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            ULONGLONG startFt = 0, stopFt = 0;
+            DWORD type = 0, cb = sizeof(ULONGLONG);
+            bool hasStart = (RegQueryValueExW(hKey, L"LastUsedTimeStart", nullptr, &type, reinterpret_cast<LPBYTE>(&startFt), &cb) == ERROR_SUCCESS && type == REG_QWORD);
+            cb = sizeof(ULONGLONG);
+            bool hasStop = (RegQueryValueExW(hKey, L"LastUsedTimeStop", nullptr, &type, reinterpret_cast<LPBYTE>(&stopFt), &cb) == ERROR_SUCCESS && type == REG_QWORD);
+            RegCloseKey(hKey);
+
+            if (hasStart && hasStop && stopFt == 0 && startFt > 0) {
+                if (earliestProcStart == 0 || startFt + 50000000ULL >= earliestProcStart) {
+                    res.inCall = true;
+                    if (startFt > 116444736000000000ULL) {
+                        long long ms = (long long)((startFt - 116444736000000000ULL) / 10000ULL);
+                        if (res.startedAtMs == 0 || ms < res.startedAtMs) {
+                            res.startedAtMs = ms;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Fallback: WASAPI active eCapture session belonging to any running Discord PID
+    if (!res.inCall) {
+        HRESULT hrInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        bool didInit = SUCCEEDED(hrInit);
+        if (hrInit == RPC_E_CHANGED_MODE || didInit) {
+            IMMDeviceEnumerator* pEnum = nullptr;
+            if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&pEnum))) && pEnum) {
+                IMMDeviceCollection* pCol = nullptr;
+                if (SUCCEEDED(pEnum->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &pCol)) && pCol) {
+                    UINT devCount = 0;
+                    pCol->GetCount(&devCount);
+                    for (UINT d = 0; d < devCount && !res.inCall; d++) {
+                        IMMDevice* pDev = nullptr;
+                        if (FAILED(pCol->Item(d, &pDev)) || !pDev) continue;
+                        IAudioSessionManager2* pMgr = nullptr;
+                        if (SUCCEEDED(pDev->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(&pMgr))) && pMgr) {
+                            IAudioSessionEnumerator* pSesEnum = nullptr;
+                            if (SUCCEEDED(pMgr->GetSessionEnumerator(&pSesEnum)) && pSesEnum) {
+                                int cnt = 0;
+                                pSesEnum->GetCount(&cnt);
+                                for (int i = 0; i < cnt && !res.inCall; i++) {
+                                    IAudioSessionControl* pCtrl = nullptr;
+                                    if (FAILED(pSesEnum->GetSession(i, &pCtrl)) || !pCtrl) continue;
+                                    IAudioSessionControl2* pCtrl2 = nullptr;
+                                    if (SUCCEEDED(pCtrl->QueryInterface(__uuidof(IAudioSessionControl2), reinterpret_cast<void**>(&pCtrl2))) && pCtrl2) {
+                                        DWORD spid = 0;
+                                        AudioSessionState st = AudioSessionStateInactive;
+                                        pCtrl2->GetProcessId(&spid);
+                                        pCtrl2->GetState(&st);
+                                        if (st == AudioSessionStateActive && pidSet.count(spid)) {
+                                            res.inCall = true;
+                                        }
+                                        pCtrl2->Release();
+                                    }
+                                    pCtrl->Release();
+                                }
+                                pSesEnum->Release();
+                            }
+                            pMgr->Release();
+                        }
+                        pDev->Release();
+                    }
+                    pCol->Release();
+                }
+                pEnum->Release();
+            }
+            if (didInit) CoUninitialize();
+        }
+    }
+
+    return res;
+}
+
 void DiscordManager::PollLocalStatus() {
     std::thread([this]() {
-        bool discordRunning = !FindProcessIdsByExe(L"Discord.exe").empty()
-                           || !FindProcessIdsByExe(L"DiscordCanary.exe").empty()
-                           || !FindProcessIdsByExe(L"DiscordPTB.exe").empty();
+        std::vector<DWORD> discordPids = FindProcessIdsByExe(L"Discord.exe");
+        auto canaryPids = FindProcessIdsByExe(L"DiscordCanary.exe");
+        auto ptbPids = FindProcessIdsByExe(L"DiscordPTB.exe");
+        discordPids.insert(discordPids.end(), canaryPids.begin(), canaryPids.end());
+        discordPids.insert(discordPids.end(), ptbPids.begin(), ptbPids.end());
+        bool discordRunning = !discordPids.empty();
+        DiscordVoiceProbeResult voiceProbe = ProbeDiscordLocalVoiceCall(discordPids);
 
         SpotifyFindCtx ctx;
         ctx.pids = FindProcessIdsByExe(L"Spotify.exe");
@@ -392,6 +522,8 @@ void DiscordManager::PollLocalStatus() {
         out << "{\"type\":\"discordLocalStatus\""
             << ",\"discordRunning\":" << (discordRunning ? "true" : "false")
             << ",\"ipcConnected\":" << (m_ipcRunning.load() && m_pipe != INVALID_HANDLE_VALUE ? "true" : "false")
+            << ",\"voice\":{\"inCall\":" << (voiceProbe.inCall ? "true" : "false")
+            << ",\"startedAt\":" << voiceProbe.startedAtMs << "}"
             << ",\"spotify\":{"
             << "\"running\":" << (spotifyRunning ? "true" : "false")
             << ",\"playing\":" << (spotifyPlaying ? "true" : "false")
@@ -564,6 +696,17 @@ void DiscordManager::IpcWorkerLoop(std::string clientId) {
 
 void DiscordManager::SetActivity(const std::string& jsonArgs) {
     if (!m_ipcRunning.load() || m_pipe == INVALID_HANDLE_VALUE) return;
+
+    if (jsonArgs.find("\"clear\":true") != std::string::npos) {
+        std::ostringstream ss;
+        uint64_t nonce = m_nonceCounter++;
+        ss << "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" << GetCurrentProcessId() << "},\"nonce\":\"" << nonce << "\"}";
+        std::string frame = ss.str();
+        std::thread([this, frame]() {
+            SendIpcFrame(1, frame);
+        }).detach();
+        return;
+    }
 
     std::string state = ExtractJsonString(jsonArgs, "state");
     std::string details = ExtractJsonString(jsonArgs, "details");

@@ -1,7 +1,7 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "name": "Roxy Room",
-  "changelog": "Corrige fundo e recorte da logo circular no cabeçalho e no player web.",
+  "changelog": "Adiciona detecção local de chamada ativa do Discord e seletor de status (online, Ausente, Não perturbar, Invisível) integrado.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

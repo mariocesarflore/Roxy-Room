@@ -146,12 +146,17 @@ function sanitizeDiscordAvatar(url) {
     : '';
 }
 
+function sanitizePeerStatus(status) {
+  return ['online', 'idle', 'dnd', 'offline'].includes(status) ? status : 'online';
+}
+
 function getLocalIdentity() {
   const d = window.roxyDiscord?.getProfileIdentity?.();
   const inputName = document.getElementById('usernameInput')?.value.trim() || '';
   const name = (d && d.name) ? d.name : (inputName || 'Usuário ' + Math.floor(Math.random() * 1000));
   const avatarUrl = d ? sanitizeDiscordAvatar(d.avatarUrl) : '';
-  return { name, avatarUrl };
+  const status = sanitizePeerStatus(d?.status);
+  return { name, avatarUrl, status };
 }
 
 function joinOrCreateRoom(targetRoomId, autoStartStream = false) {
@@ -331,6 +336,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
         type: 'hello',
         name: myName,
         avatarUrl: localId.avatarUrl,
+        status: localId.status,
         peerId: myPeerId,
         isHost: isHost,
         isStreaming: isStreaming
@@ -340,13 +346,14 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
 
     // If I am Host: send full room state to new peer and announce to existing peers!
     if (isHost) {
-      const currentPeers = [{ peerId: myPeerId, name: myName, avatarUrl: localId.avatarUrl, isHost: true, isStreaming: isStreaming }];
+      const currentPeers = [{ peerId: myPeerId, name: myName, avatarUrl: localId.avatarUrl, status: localId.status, isHost: true, isStreaming: isStreaming }];
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId) {
           currentPeers.push({
             peerId: id,
             name: c.name || 'Amigo',
             avatarUrl: c.avatarUrl || '',
+            status: sanitizePeerStatus(c.status),
             isHost: false,
             isStreaming: !!c.isStreamingRemote
           });
@@ -358,6 +365,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
           type: 'roomState',
           hostName: myName,
           hostAvatarUrl: localId.avatarUrl,
+          hostStatus: localId.status,
           hostStreaming: isStreaming,
           peers: currentPeers
         });
@@ -366,6 +374,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
       // Announce to other peers
       const newPeerName = activeConnections[peerId]?.name || defaultName || 'Amigo';
       const newPeerAvatar = activeConnections[peerId]?.avatarUrl || '';
+      const newPeerStatus = sanitizePeerStatus(activeConnections[peerId]?.status);
       const newPeerStreaming = !!activeConnections[peerId]?.isStreamingRemote;
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId && c.dataConn?.open) {
@@ -375,6 +384,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
               peerId: peerId,
               name: newPeerName,
               avatarUrl: newPeerAvatar,
+              status: newPeerStatus,
               isStreaming: newPeerStreaming
             });
           } catch(e) {}
@@ -432,9 +442,10 @@ function handleDataMessage(fromPeerId, data) {
     }
 
     case 'hello': {
-      // Remote peer sent their REAL name, Discord avatar and host status!
+      // Remote peer sent their REAL name, Discord avatar, status and host status!
       if (!activeConnections[fromPeerId]) activeConnections[fromPeerId] = {};
       activeConnections[fromPeerId].name = data.name;
+      activeConnections[fromPeerId].status = sanitizePeerStatus(data.status);
       if (typeof data.isStreaming === 'boolean') {
         activeConnections[fromPeerId].isStreamingRemote = data.isStreaming;
       }
@@ -442,11 +453,11 @@ function handleDataMessage(fromPeerId, data) {
       if (safeAvatar) activeConnections[fromPeerId].avatarUrl = safeAvatar;
       const isRemoteHost = !!data.isHost || fromPeerId.startsWith(ROOM_PREFIX);
 
-      updateOrAddUser(fromPeerId, data.name, isRemoteHost, activeConnections[fromPeerId].avatarUrl);
+      updateOrAddUser(fromPeerId, data.name, isRemoteHost, activeConnections[fromPeerId].avatarUrl, activeConnections[fromPeerId].status);
       renderAvailableStreams();
       showToast(`👋 ${data.name} entrou na sala!`);
 
-      // If we are Host, broadcast updated name & avatar to others
+      // If we are Host, broadcast updated name, avatar & status to others
       if (isHost) {
         Object.entries(activeConnections).forEach(([id, c]) => {
           if (id !== fromPeerId && c.dataConn?.open) {
@@ -455,7 +466,8 @@ function handleDataMessage(fromPeerId, data) {
                 type: 'peerUpdated',
                 peerId: fromPeerId,
                 name: data.name,
-                avatarUrl: activeConnections[fromPeerId].avatarUrl || ''
+                avatarUrl: activeConnections[fromPeerId].avatarUrl || '',
+                status: activeConnections[fromPeerId].status
               });
             } catch(e) {}
           }
@@ -473,26 +485,30 @@ function handleDataMessage(fromPeerId, data) {
       // Sent by Host: contains hostName and list of all peers in room
       if (data.hostName) {
         const hostAvatar = sanitizeDiscordAvatar(data.hostAvatarUrl);
+        const hostStatus = sanitizePeerStatus(data.hostStatus);
         if (!activeConnections[fromPeerId]) activeConnections[fromPeerId] = {};
         activeConnections[fromPeerId].name = data.hostName;
+        activeConnections[fromPeerId].status = hostStatus;
         if (hostAvatar) activeConnections[fromPeerId].avatarUrl = hostAvatar;
         if (typeof data.hostStreaming === 'boolean') {
           activeConnections[fromPeerId].isStreamingRemote = data.hostStreaming;
         }
-        updateOrAddUser(fromPeerId, data.hostName, true, hostAvatar);
+        updateOrAddUser(fromPeerId, data.hostName, true, hostAvatar, hostStatus);
       }
 
       if (Array.isArray(data.peers)) {
         data.peers.forEach(p => {
           if (p.peerId !== myPeerId) {
             const peerAvatar = sanitizeDiscordAvatar(p.avatarUrl);
+            const peerStatus = sanitizePeerStatus(p.status);
             if (!activeConnections[p.peerId]) activeConnections[p.peerId] = {};
             activeConnections[p.peerId].name = p.name;
+            activeConnections[p.peerId].status = peerStatus;
             if (peerAvatar) activeConnections[p.peerId].avatarUrl = peerAvatar;
             if (typeof p.isStreaming === 'boolean') {
               activeConnections[p.peerId].isStreamingRemote = p.isStreaming;
             }
-            updateOrAddUser(p.peerId, p.name, !!p.isHost, peerAvatar);
+            updateOrAddUser(p.peerId, p.name, !!p.isHost, peerAvatar, peerStatus);
 
             // Connect to other peers in room!
             // Tie-break: only connect if myPeerId is lexicographically smaller
@@ -512,13 +528,15 @@ function handleDataMessage(fromPeerId, data) {
       // Sent by Host to all existing peers when a new peer joins
       if (data.peerId !== myPeerId) {
         const peerAvatar = sanitizeDiscordAvatar(data.avatarUrl);
+        const peerStatus = sanitizePeerStatus(data.status);
         if (!activeConnections[data.peerId]) activeConnections[data.peerId] = {};
         activeConnections[data.peerId].name = data.name;
+        activeConnections[data.peerId].status = peerStatus;
         if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
         if (typeof data.isStreaming === 'boolean') {
           activeConnections[data.peerId].isStreamingRemote = data.isStreaming;
         }
-        updateOrAddUser(data.peerId, data.name, false, peerAvatar);
+        updateOrAddUser(data.peerId, data.name, false, peerAvatar, peerStatus);
         renderAvailableStreams();
         showToast(`👋 ${data.name} entrou na sala!`);
 
@@ -536,11 +554,13 @@ function handleDataMessage(fromPeerId, data) {
       if (data.peerId !== myPeerId) {
         const isRemoteHost = data.peerId.startsWith(ROOM_PREFIX);
         const peerAvatar = sanitizeDiscordAvatar(data.avatarUrl);
+        const peerStatus = sanitizePeerStatus(data.status || activeConnections[data.peerId]?.status);
         if (activeConnections[data.peerId]) {
           activeConnections[data.peerId].name = data.name;
+          activeConnections[data.peerId].status = peerStatus;
           if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
         }
-        updateOrAddUser(data.peerId, data.name, isRemoteHost, peerAvatar);
+        updateOrAddUser(data.peerId, data.name, isRemoteHost, peerAvatar, peerStatus);
       }
       break;
     }
@@ -2310,7 +2330,7 @@ function renderAvailableStreams() {
 }
 
 // ─── User List ────────────────────────────────────────────────────────────────
-function updateOrAddUser(peerId, name, isHostUser, avatarUrl) {
+function updateOrAddUser(peerId, name, isHostUser, avatarUrl, status) {
   const list = document.getElementById('userList');
   if (!list) return;
   const empty = list.querySelector('.empty-list');
@@ -2324,6 +2344,9 @@ function updateOrAddUser(peerId, name, isHostUser, avatarUrl) {
   const initial = cleanName.charAt(0).toUpperCase() || 'U';
   const resolvedAvatar = sanitizeDiscordAvatar(
     avatarUrl || (isSelf ? localId?.avatarUrl : activeConnections[peerId]?.avatarUrl) || ''
+  );
+  const resolvedStatus = sanitizePeerStatus(
+    status || (isSelf ? localId?.status : activeConnections[peerId]?.status)
   );
 
   if (isSelf) {
@@ -2346,7 +2369,7 @@ function updateOrAddUser(peerId, name, isHostUser, avatarUrl) {
 
   li.className = 'user-item' + (isHostUser ? ' is-host-user' : '') + (isSelf ? ' user-item-self' : '');
   li.innerHTML = `
-    <div class="user-live-dot"></div>
+    <div class="user-live-dot ${resolvedStatus}"></div>
     <div class="user-avatar-badge ${isHostUser ? 'host-avatar' : 'client-avatar'}">${
       resolvedAvatar ? `<img class="user-avatar-img" src="${escHtml(resolvedAvatar)}" alt="">` : escHtml(initial)
     }</div>
@@ -2400,8 +2423,8 @@ window.refreshSelfRoomIdentity = function () {
   if (!peer || peer.destroyed || !myPeerId) return;
   _refreshingSelfIdentity = true;
   try {
-    updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl);
-    const nextKey = myName + '|' + localId.avatarUrl;
+    updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl, localId.status);
+    const nextKey = myName + '|' + localId.avatarUrl + '|' + localId.status;
     if (nextKey !== _lastBroadcastIdentityKey) {
       _lastBroadcastIdentityKey = nextKey;
       Object.values(activeConnections).forEach((c) => {
@@ -2411,7 +2434,8 @@ window.refreshSelfRoomIdentity = function () {
               type: 'peerUpdated',
               peerId: myPeerId,
               name: myName,
-              avatarUrl: localId.avatarUrl
+              avatarUrl: localId.avatarUrl,
+              status: localId.status
             });
           } catch (e) {}
         }
@@ -2470,6 +2494,7 @@ function escHtml(s) {
 
 let _beepCtx = null;
 function playBeep() {
+  if (window.roxyDiscord?.getStatus?.() === 'dnd') return;
   try {
     if (!_beepCtx || _beepCtx.state === 'closed') _beepCtx = new AudioContext();
     const osc = _beepCtx.createOscillator();
@@ -3022,7 +3047,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.1.8';
+const CURRENT_VERSION = '1.1.9';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {
