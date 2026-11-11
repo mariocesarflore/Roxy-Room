@@ -32,6 +32,7 @@ jobs:
              src\WebStreamServer.cpp `
              src\D3D11Renderer.cpp `
              src\NativePlayerWindow.cpp `
+             src\DiscordManager.cpp `
              bin\app.res `
              /I src /I packages\webview2\include `
              /Fe:bin\RoxyRoom.exe `
@@ -39,7 +40,7 @@ jobs:
              /link `
              packages\webview2\lib\WebView2LoaderStatic.lib `
              mmdevapi.lib avrt.lib d3d11.lib dxgi.lib d3dcompiler.lib `
-             ws2_32.lib advapi32.lib crypt32.lib user32.lib shell32.lib ole32.lib gdi32.lib `
+             ws2_32.lib advapi32.lib crypt32.lib winhttp.lib user32.lib shell32.lib ole32.lib gdi32.lib `
              shlwapi.lib version.lib dwmapi.lib `
              /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup /OPT:REF /OPT:ICF
           Copy-Item packages\webview2\lib\WebView2Loader.dll bin\ -Force

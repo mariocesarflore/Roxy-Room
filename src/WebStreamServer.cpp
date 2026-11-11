@@ -234,13 +234,132 @@ void WebStreamServer::ClientHandlerThread(SOCKET clientSocket) {
         }
     }
 
-    // Standard HTTP static file server
+    // Standard HTTP static file server & Discord OAuth callback
     std::stringstream reqStream(request);
     std::string method, url;
     reqStream >> method >> url;
 
     size_t qPos = url.find('?');
     std::string cleanUrl = (qPos != std::string::npos) ? url.substr(0, qPos) : url;
+
+    if (cleanUrl == "/discord/callback") {
+        std::string cbHtml = R"HTML(<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Roxy Room • Discord OAuth2</title>
+<style>
+  body { margin:0; background:#060911; color:#f8fafc; font-family:'Segoe UI',system-ui,sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; }
+  .card { background:#0b1020; border:1px solid rgba(129,140,248,0.35); border-radius:16px; padding:28px 32px; text-align:center; max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,0.7); }
+  h2 { margin:0 0 8px; font-size:1.25rem; }
+  p { margin:0; color:#94a3b8; font-size:0.9rem; line-height:1.5; }
+  .ok { color:#34d399; }
+  .err { color:#fb7185; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2 id="title">Conectando ao Roxy Room...</h2>
+  <p id="desc">Finalizando autorização com o Discord.</p>
+</div>
+<script>
+(function() {
+  const qs = new URLSearchParams(window.location.search);
+  const hs = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+  const payload = {
+    code: qs.get('code') || '',
+    state: qs.get('state') || hs.get('state') || '',
+    error: qs.get('error') || hs.get('error') || '',
+    error_description: qs.get('error_description') || hs.get('error_description') || '',
+    access_token: hs.get('access_token') || '',
+    token_type: hs.get('token_type') || '',
+    expires_in: hs.get('expires_in') || '',
+    scope: hs.get('scope') || ''
+  };
+  fetch('/discord/token-relay', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(() => {
+    const t = document.getElementById('title');
+    const d = document.getElementById('desc');
+    if (payload.error) {
+      t.textContent = 'Autorização cancelada';
+      t.className = 'err';
+      d.textContent = payload.error_description || payload.error;
+    } else {
+      t.textContent = 'Discord conectado ao Roxy Room!';
+      t.className = 'ok';
+      d.textContent = 'Você já pode fechar esta aba e voltar ao Roxy Room.';
+      setTimeout(() => { try { window.close(); } catch(e) {} }, 1200);
+    }
+  }).catch(() => {
+    document.getElementById('title').textContent = 'Erro ao enviar retorno ao app';
+  });
+})();
+</script>
+</body>
+</html>)HTML";
+        std::stringstream response;
+        response << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: text/html; charset=utf-8\r\n"
+            << "Content-Length: " << cbHtml.length() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << cbHtml;
+        std::string respStr = response.str();
+        send(clientSocket, respStr.c_str(), (int)respStr.length(), 0);
+        shutdown(clientSocket, SD_SEND);
+        closesocket(clientSocket);
+        return;
+    }
+
+    if (cleanUrl == "/discord/token-relay") {
+        if (method == "OPTIONS") {
+            std::string optResp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n";
+            send(clientSocket, optResp.c_str(), (int)optResp.length(), 0);
+            shutdown(clientSocket, SD_SEND);
+            closesocket(clientSocket);
+            return;
+        }
+        size_t hdrEnd = request.find("\r\n\r\n");
+        std::string reqBody;
+        if (hdrEnd != std::string::npos) {
+            size_t contentLen = 0;
+            std::string lowerHdr = request.substr(0, hdrEnd);
+            std::transform(lowerHdr.begin(), lowerHdr.end(), lowerHdr.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+            size_t clPos = lowerHdr.find("content-length:");
+            if (clPos != std::string::npos) {
+                contentLen = (size_t)strtoul(lowerHdr.c_str() + clPos + 15, nullptr, 10);
+            }
+            reqBody = request.substr(hdrEnd + 4);
+            while (reqBody.size() < contentLen && contentLen <= 65536) {
+                char extra[1024];
+                int n = recv(clientSocket, extra, sizeof(extra), 0);
+                if (n <= 0) break;
+                reqBody.append(extra, n);
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_oauthCbMutex);
+            if (m_discordOAuthCallback && !reqBody.empty()) {
+                m_discordOAuthCallback(reqBody);
+            }
+        }
+        std::string okJson = "{\"ok\":true}";
+        std::stringstream response;
+        response << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << okJson.length() << "\r\n"
+            << "Access-Control-Allow-Origin: *\r\n"
+            << "Connection: close\r\n\r\n"
+            << okJson;
+        std::string respStr = response.str();
+        send(clientSocket, respStr.c_str(), (int)respStr.length(), 0);
+        shutdown(clientSocket, SD_SEND);
+        closesocket(clientSocket);
+        return;
+    }
+
     if (cleanUrl == "/" || cleanUrl.empty()) cleanUrl = "/index.html";
 
     std::string sub = (cleanUrl[0] == '/') ? cleanUrl.substr(1) : cleanUrl;

@@ -51,8 +51,12 @@ let devStatsIntervals = {};
 function updateAvatar() {
   const name = document.getElementById('usernameInput')?.value.trim() || 'M';
   const avatar = document.getElementById('userAvatar');
-  if (avatar) {
+  if (avatar && !avatar.querySelector('img')) {
     avatar.textContent = name.charAt(0).toUpperCase() || 'M';
+  }
+  const display = document.getElementById('profileDisplayName');
+  if (display && !display.dataset.discordLocked) {
+    display.textContent = name;
   }
 }
 
@@ -134,9 +138,26 @@ function clearUserList() {
   updateUserCount();
 }
 
+function sanitizeDiscordAvatar(url) {
+  if (typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  return /^https:\/\/cdn\.discordapp\.com\/(avatars|embed\/avatars)\/[a-zA-Z0-9_/?=&.%-]+$/i.test(trimmed)
+    ? trimmed
+    : '';
+}
+
+function getLocalIdentity() {
+  const d = window.roxyDiscord?.getProfileIdentity?.();
+  const inputName = document.getElementById('usernameInput')?.value.trim() || '';
+  const name = (d && d.name) ? d.name : (inputName || 'Usuário ' + Math.floor(Math.random() * 1000));
+  const avatarUrl = d ? sanitizeDiscordAvatar(d.avatarUrl) : '';
+  return { name, avatarUrl };
+}
+
 function joinOrCreateRoom(targetRoomId, autoStartStream = false) {
   const room = getCleanRoom(targetRoomId || document.getElementById('roomId').value);
-  myName = document.getElementById('usernameInput').value.trim() || 'Usuário ' + Math.floor(Math.random() * 1000);
+  const localId = getLocalIdentity();
+  myName = localId.name;
 
   if (!room) {
     showToast('⚠️ Digite ou gere um ID de sala!', 'warn');
@@ -172,8 +193,10 @@ function joinOrCreateRoom(targetRoomId, autoStartStream = false) {
   peer.on('open', (id) => {
     myPeerId = id;
     isHost = true;
+    const localId = getLocalIdentity();
+    myName = localId.name;
     updateStatus(`👑 Host da Sala: ${room}`, true);
-    addUserToList(myPeerId, myName + ' (Você)', true);
+    addUserToList(myPeerId, myName + ' (Você)', true, localId.avatarUrl);
     showToast(`🏠 Conectado como Host da sala ${room}!`, 'success');
     if (autoStartStream) openSourcePicker();
   });
@@ -214,7 +237,7 @@ function connectAsClient(room, hostPeerId, autoStartStream = false) {
   document.querySelectorAll('.stream-card').forEach(c => { if (c._cleanup) c._cleanup(); c.remove(); });
   updatePlaceholder();
 
-  myName = document.getElementById('usernameInput').value.trim() || 'Usuário ' + Math.floor(Math.random() * 1000);
+  myName = getLocalIdentity().name;
   updateStatus(`Conectando à sala ${room}...`, false);
 
   const clientOpts = {
@@ -226,8 +249,10 @@ function connectAsClient(room, hostPeerId, autoStartStream = false) {
 
   peer.on('open', (id) => {
     myPeerId = id;
+    const localId = getLocalIdentity();
+    myName = localId.name;
     updateStatus(`🟢 Sala: ${room}`, true);
-    updateOrAddUser(myPeerId, myName + ' (Você)', false);
+    updateOrAddUser(myPeerId, myName + ' (Você)', false, localId.avatarUrl);
     showToast(`✅ Conectado à sala ${room}!`, 'success');
 
     // Connect data channel to Host
@@ -279,9 +304,11 @@ function connectToPeer(targetPeerId, defaultName, isTargetHost = false) {
   if (!peer || peer.destroyed || !targetPeerId || targetPeerId === myPeerId) return;
   if (activeConnections[targetPeerId]?.dataConn) return;
 
+  const localId = getLocalIdentity();
+  myName = localId.name;
   console.log(`[Mesh] Conectando data channel a ${targetPeerId} (${defaultName})...`);
   const conn = peer.connect(targetPeerId, {
-    metadata: { name: myName, peerId: myPeerId, isHost: isHost },
+    metadata: { name: myName, avatarUrl: localId.avatarUrl, peerId: myPeerId, isHost: isHost },
     reliable: true
   });
   setupDataConnection(conn, targetPeerId, defaultName, isTargetHost);
@@ -295,26 +322,33 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
     if (!activeConnections[peerId]) activeConnections[peerId] = {};
     activeConnections[peerId].dataConn = conn;
 
-    // Send hello with our actual name and role
+    const localId = getLocalIdentity();
+    myName = localId.name;
+
+    // Send hello with our actual name, Discord avatar and role
     try {
       conn.send({
         type: 'hello',
         name: myName,
+        avatarUrl: localId.avatarUrl,
         peerId: myPeerId,
-        isHost: isHost
+        isHost: isHost,
+        isStreaming: isStreaming
       });
       conn.send({ type: 'requestStream', peerId: myPeerId });
     } catch(e) {}
 
     // If I am Host: send full room state to new peer and announce to existing peers!
     if (isHost) {
-      const currentPeers = [{ peerId: myPeerId, name: myName, isHost: true }];
+      const currentPeers = [{ peerId: myPeerId, name: myName, avatarUrl: localId.avatarUrl, isHost: true, isStreaming: isStreaming }];
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId) {
           currentPeers.push({
             peerId: id,
             name: c.name || 'Amigo',
-            isHost: false
+            avatarUrl: c.avatarUrl || '',
+            isHost: false,
+            isStreaming: !!c.isStreamingRemote
           });
         }
       });
@@ -323,19 +357,25 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
         conn.send({
           type: 'roomState',
           hostName: myName,
+          hostAvatarUrl: localId.avatarUrl,
+          hostStreaming: isStreaming,
           peers: currentPeers
         });
       } catch(e) {}
 
       // Announce to other peers
       const newPeerName = activeConnections[peerId]?.name || defaultName || 'Amigo';
+      const newPeerAvatar = activeConnections[peerId]?.avatarUrl || '';
+      const newPeerStreaming = !!activeConnections[peerId]?.isStreamingRemote;
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId && c.dataConn?.open) {
           try {
             c.dataConn.send({
               type: 'peerJoined',
               peerId: peerId,
-              name: newPeerName
+              name: newPeerName,
+              avatarUrl: newPeerAvatar,
+              isStreaming: newPeerStreaming
             });
           } catch(e) {}
         }
@@ -392,20 +432,31 @@ function handleDataMessage(fromPeerId, data) {
     }
 
     case 'hello': {
-      // Remote peer sent their REAL name and host status!
+      // Remote peer sent their REAL name, Discord avatar and host status!
       if (!activeConnections[fromPeerId]) activeConnections[fromPeerId] = {};
       activeConnections[fromPeerId].name = data.name;
+      if (typeof data.isStreaming === 'boolean') {
+        activeConnections[fromPeerId].isStreamingRemote = data.isStreaming;
+      }
+      const safeAvatar = sanitizeDiscordAvatar(data.avatarUrl);
+      if (safeAvatar) activeConnections[fromPeerId].avatarUrl = safeAvatar;
       const isRemoteHost = !!data.isHost || fromPeerId.startsWith(ROOM_PREFIX);
 
-      updateOrAddUser(fromPeerId, data.name, isRemoteHost);
+      updateOrAddUser(fromPeerId, data.name, isRemoteHost, activeConnections[fromPeerId].avatarUrl);
+      renderAvailableStreams();
       showToast(`👋 ${data.name} entrou na sala!`);
 
-      // If we are Host, broadcast updated name to others
+      // If we are Host, broadcast updated name & avatar to others
       if (isHost) {
         Object.entries(activeConnections).forEach(([id, c]) => {
           if (id !== fromPeerId && c.dataConn?.open) {
             try {
-              c.dataConn.send({ type: 'peerUpdated', peerId: fromPeerId, name: data.name });
+              c.dataConn.send({
+                type: 'peerUpdated',
+                peerId: fromPeerId,
+                name: data.name,
+                avatarUrl: activeConnections[fromPeerId].avatarUrl || ''
+              });
             } catch(e) {}
           }
         });
@@ -421,16 +472,27 @@ function handleDataMessage(fromPeerId, data) {
     case 'roomState': {
       // Sent by Host: contains hostName and list of all peers in room
       if (data.hostName) {
-        updateOrAddUser(fromPeerId, data.hostName, true);
-        if (activeConnections[fromPeerId]) activeConnections[fromPeerId].name = data.hostName;
+        const hostAvatar = sanitizeDiscordAvatar(data.hostAvatarUrl);
+        if (!activeConnections[fromPeerId]) activeConnections[fromPeerId] = {};
+        activeConnections[fromPeerId].name = data.hostName;
+        if (hostAvatar) activeConnections[fromPeerId].avatarUrl = hostAvatar;
+        if (typeof data.hostStreaming === 'boolean') {
+          activeConnections[fromPeerId].isStreamingRemote = data.hostStreaming;
+        }
+        updateOrAddUser(fromPeerId, data.hostName, true, hostAvatar);
       }
 
       if (Array.isArray(data.peers)) {
         data.peers.forEach(p => {
           if (p.peerId !== myPeerId) {
-            updateOrAddUser(p.peerId, p.name, !!p.isHost);
+            const peerAvatar = sanitizeDiscordAvatar(p.avatarUrl);
             if (!activeConnections[p.peerId]) activeConnections[p.peerId] = {};
             activeConnections[p.peerId].name = p.name;
+            if (peerAvatar) activeConnections[p.peerId].avatarUrl = peerAvatar;
+            if (typeof p.isStreaming === 'boolean') {
+              activeConnections[p.peerId].isStreamingRemote = p.isStreaming;
+            }
+            updateOrAddUser(p.peerId, p.name, !!p.isHost, peerAvatar);
 
             // Connect to other peers in room!
             // Tie-break: only connect if myPeerId is lexicographically smaller
@@ -442,15 +504,22 @@ function handleDataMessage(fromPeerId, data) {
           }
         });
       }
+      renderAvailableStreams();
       break;
     }
 
     case 'peerJoined': {
       // Sent by Host to all existing peers when a new peer joins
       if (data.peerId !== myPeerId) {
-        updateOrAddUser(data.peerId, data.name, false);
+        const peerAvatar = sanitizeDiscordAvatar(data.avatarUrl);
         if (!activeConnections[data.peerId]) activeConnections[data.peerId] = {};
         activeConnections[data.peerId].name = data.name;
+        if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
+        if (typeof data.isStreaming === 'boolean') {
+          activeConnections[data.peerId].isStreamingRemote = data.isStreaming;
+        }
+        updateOrAddUser(data.peerId, data.name, false, peerAvatar);
+        renderAvailableStreams();
         showToast(`👋 ${data.name} entrou na sala!`);
 
         // Connect to the new peer if our ID is smaller
@@ -466,8 +535,12 @@ function handleDataMessage(fromPeerId, data) {
     case 'peerUpdated': {
       if (data.peerId !== myPeerId) {
         const isRemoteHost = data.peerId.startsWith(ROOM_PREFIX);
-        updateOrAddUser(data.peerId, data.name, isRemoteHost);
-        if (activeConnections[data.peerId]) activeConnections[data.peerId].name = data.name;
+        const peerAvatar = sanitizeDiscordAvatar(data.avatarUrl);
+        if (activeConnections[data.peerId]) {
+          activeConnections[data.peerId].name = data.name;
+          if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
+        }
+        updateOrAddUser(data.peerId, data.name, isRemoteHost, peerAvatar);
       }
       break;
     }
@@ -481,12 +554,32 @@ function handleDataMessage(fromPeerId, data) {
 
     case 'requestStream': {
       if (isStreaming && myStream) {
-        callPeer(fromPeerId, myStream);
+        callPeer(fromPeerId, myStream, true);
+      }
+      break;
+    }
+
+    case 'stopWatching': {
+      const c = activeConnections[fromPeerId];
+      if (c) {
+        c._isCalling = false;
+        if (c.outgoingCall) {
+          try { c.outgoingCall.close(); } catch(e) {}
+          delete c.outgoingCall;
+        }
       }
       break;
     }
 
     case 'streamStarted': {
+      if (!activeConnections[fromPeerId]) activeConnections[fromPeerId] = {};
+      activeConnections[fromPeerId].isStreamingRemote = true;
+      activeConnections[fromPeerId].watchingPaused = false;
+      {
+        const c = activeConnections[fromPeerId];
+        updateOrAddUser(fromPeerId, c.name || data.name || 'Amigo', fromPeerId.startsWith(ROOM_PREFIX), c.avatarUrl);
+      }
+      renderAvailableStreams();
       showToast(`📹 ${data.name} começou a transmitir!`, 'success');
       if (activeConnections[fromPeerId]?.dataConn?.open) {
         try {
@@ -497,12 +590,22 @@ function handleDataMessage(fromPeerId, data) {
     }
 
     case 'streamStopped': {
-      if (activeConnections[fromPeerId]?.streamCard) {
-        if (activeConnections[fromPeerId].streamCard._cleanup) activeConnections[fromPeerId].streamCard._cleanup();
-        activeConnections[fromPeerId].streamCard.remove();
-        delete activeConnections[fromPeerId].streamCard;
-        updatePlaceholder();
+      if (activeConnections[fromPeerId]) {
+        activeConnections[fromPeerId].isStreamingRemote = false;
+        activeConnections[fromPeerId].watchingPaused = false;
+        if (activeConnections[fromPeerId].streamCard) {
+          if (activeConnections[fromPeerId].streamCard._cleanup) activeConnections[fromPeerId].streamCard._cleanup();
+          activeConnections[fromPeerId].streamCard.remove();
+          delete activeConnections[fromPeerId].streamCard;
+        }
+        if (activeConnections[fromPeerId].incomingCall) {
+          try { activeConnections[fromPeerId].incomingCall.close(); } catch(e) {}
+          delete activeConnections[fromPeerId].incomingCall;
+        }
+        const c = activeConnections[fromPeerId];
+        updateOrAddUser(fromPeerId, c.name || data.name || 'Amigo', fromPeerId.startsWith(ROOM_PREFIX), c.avatarUrl);
       }
+      updatePlaceholder();
       break;
     }
   }
@@ -553,6 +656,13 @@ function updateStatus(text, connected) {
     else if (connected) stageStatus.textContent = 'conectado •';
     else stageStatus.textContent = 'aguardando transmissão •';
   }
+
+  window.roxyDiscord?.onRoomStateChanged({
+    roomId: room,
+    connected: !!connected,
+    isHost: !!isHost,
+    userCount: document.querySelectorAll('#userList .user-item').length
+  });
 }
 
 function removePeer(peerId) {
@@ -1121,6 +1231,7 @@ async function startStream(sourceId, excludePid) {
 
   if (settings.streamSound) playBeep();
   showToast('📡 Transmissão iniciada!', 'success');
+  window.roxyDiscord?.onStreamStateChanged({ streaming: true });
 
   // When user stops sharing via browser/system prompt
   const videoTrack = stream.getVideoTracks()[0];
@@ -1172,24 +1283,33 @@ function stopStream() {
 
   showToast('⏹️ Transmissão encerrada.');
   updatePlaceholder();
+  window.roxyDiscord?.onStreamStateChanged({ streaming: false });
 }
 
-function callPeer(peerId, stream) {
+function callPeer(peerId, stream, force = false) {
   if (!peer || peer.destroyed || !stream) return;
   if (!activeConnections[peerId]) activeConnections[peerId] = {};
 
   const connInfo = activeConnections[peerId];
 
-  // Strictly prevent duplicate calls: if we already have an active call, do nothing!
-  if (connInfo.outgoingCall) {
-    const pc = connInfo.outgoingCall.peerConnection;
-    if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
+  if (force) {
+    connInfo._isCalling = false;
+    if (connInfo.outgoingCall) {
+      try { connInfo.outgoingCall.close(); } catch(e) {}
+      delete connInfo.outgoingCall;
+    }
+  } else {
+    // Strictly prevent duplicate calls: if we already have an active call, do nothing!
+    if (connInfo.outgoingCall) {
+      const pc = connInfo.outgoingCall.peerConnection;
+      if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
+        return;
+      }
+    }
+
+    if (connInfo._isCalling) {
       return;
     }
-  }
-
-  if (connInfo._isCalling) {
-    return;
   }
   connInfo._isCalling = true;
 
@@ -1418,23 +1538,32 @@ function handleIncomingCall(call) {
 
   if (!activeConnections[peerId]) activeConnections[peerId] = {};
   activeConnections[peerId].incomingCall = call;
+  activeConnections[peerId].isStreamingRemote = true;
+  activeConnections[peerId].watchingPaused = false;
 
   call.on('stream', (remoteStream) => {
     console.log('[WebRTC] Stream recebido com sucesso de:', peerId, remoteStream);
-    const name = activeConnections[peerId]?.name || call.metadata?.name || 'Amigo';
+    const connInfo = activeConnections[peerId];
+    if (connInfo) connInfo.isStreamingRemote = true;
+    const name = connInfo?.name || call.metadata?.name || 'Amigo';
 
     showRemoteStreamCard(peerId, name, remoteStream);
+    updateOrAddUser(peerId, name, peerId.startsWith(ROOM_PREFIX), connInfo?.avatarUrl);
     showToast(`📺 Recebendo tela de ${name}!`, 'success');
   });
 
   call.on('close', () => {
-    if (activeConnections[peerId]?.streamCard) {
-      if (activeConnections[peerId].streamCard._cleanup) activeConnections[peerId].streamCard._cleanup();
-      activeConnections[peerId].streamCard.remove();
-      delete activeConnections[peerId].streamCard;
+    const connInfo = activeConnections[peerId];
+    if (connInfo?.streamCard) {
+      if (connInfo.streamCard._cleanup) connInfo.streamCard._cleanup();
+      connInfo.streamCard.remove();
+      delete connInfo.streamCard;
     }
-    if (activeConnections[peerId]?.incomingCall === call) {
-      delete activeConnections[peerId].incomingCall;
+    if (connInfo?.incomingCall === call) {
+      delete connInfo.incomingCall;
+    }
+    if (connInfo) {
+      updateOrAddUser(peerId, connInfo.name || 'Amigo', peerId.startsWith(ROOM_PREFIX), connInfo.avatarUrl);
     }
     updatePlaceholder();
   });
@@ -1589,6 +1718,7 @@ function createStreamCard(id, name, isHostUser) {
         <button class="player-mini-btn focus-btn" type="button" title="Alternar Tela Cheia / Grade">
           <span class="focus-icon">⛶</span> <span class="focus-text">Focar</span>
         </button>
+        ${!isSelf ? `<button class="player-mini-btn btn-leave-stream" type="button" title="Sair desta transmissão (você pode voltar depois)"><span>✕ Sair</span></button>` : ''}
       </div>
     </div>
 
@@ -1880,6 +2010,14 @@ function createStreamCard(id, name, isHostUser) {
     });
   }
 
+  const leaveStreamBtn = card.querySelector('.btn-leave-stream');
+  if (leaveStreamBtn && !isSelf) {
+    leaveStreamBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      stopWatchingStream(id.replace('stream-', ''));
+    });
+  }
+
   // Mouse wheel zoom & pan
   card.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -2094,20 +2232,105 @@ function createSourceCard(id, name, emoji) {
   return card;
 }
 
+// ─── Stream Watch / Leave Helpers ─────────────────────────────────────────────
+function stopWatchingStream(peerId, silent = false) {
+  if (!peerId) return;
+  const connInfo = activeConnections[peerId];
+  if (connInfo) {
+    connInfo.watchingPaused = true;
+    if (connInfo.streamCard) {
+      if (connInfo.streamCard._cleanup) connInfo.streamCard._cleanup();
+      connInfo.streamCard.remove();
+      delete connInfo.streamCard;
+    }
+    if (connInfo.incomingCall) {
+      try { connInfo.incomingCall.close(); } catch(e) {}
+      delete connInfo.incomingCall;
+    }
+    if (connInfo.dataConn?.open) {
+      try { connInfo.dataConn.send({ type: 'stopWatching', peerId: myPeerId }); } catch(e) {}
+    }
+  }
+  const card = document.getElementById('stream-' + peerId);
+  if (card) {
+    if (card._cleanup) card._cleanup();
+    card.remove();
+  }
+  if (connInfo) {
+    updateOrAddUser(peerId, connInfo.name || 'Amigo', peerId.startsWith(ROOM_PREFIX), connInfo.avatarUrl);
+  }
+  updatePlaceholder();
+  if (!silent) {
+    const label = connInfo?.name || 'participante';
+    showToast(`👋 Você saiu da transmissão de ${label}. Pode entrar de novo quando quiser.`);
+  }
+}
+
+function watchRemoteStream(peerId) {
+  const connInfo = activeConnections[peerId];
+  if (!connInfo || !connInfo.dataConn?.open) {
+    showToast('⚠️ Conexão P2P com este participante não está disponível no momento.', 'warn');
+    return;
+  }
+  if (document.getElementById('stream-' + peerId)) {
+    const card = document.getElementById('stream-' + peerId);
+    if (card && !card.classList.contains('focused')) toggleFocusStreamCard(card);
+    return;
+  }
+  connInfo.watchingPaused = false;
+  try {
+    connInfo.dataConn.send({ type: 'requestStream', peerId: myPeerId });
+    showToast(`📺 Entrando na transmissão de ${connInfo.name || 'Amigo'}...`);
+  } catch (e) {
+    showToast('❌ Não foi possível solicitar a transmissão.', 'error');
+  }
+}
+
+function renderAvailableStreams() {
+  const box = document.getElementById('availableStreamsBox');
+  if (!box) return;
+  const available = Object.entries(activeConnections).filter(([id, c]) =>
+    c && c.isStreamingRemote && c.dataConn?.open && !document.getElementById('stream-' + id)
+  );
+  if (!available.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  box.style.display = 'flex';
+  box.innerHTML = '';
+  available.forEach(([id, c]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-watch-available';
+    btn.innerHTML = `<span class="watch-live-dot"></span><span>Assistir transmissão de ${escHtml(c.name || 'Amigo')}</span>`;
+    btn.addEventListener('click', () => watchRemoteStream(id));
+    box.appendChild(btn);
+  });
+}
+
 // ─── User List ────────────────────────────────────────────────────────────────
-function updateOrAddUser(peerId, name, isHostUser) {
+function updateOrAddUser(peerId, name, isHostUser, avatarUrl) {
   const list = document.getElementById('userList');
   if (!list) return;
   const empty = list.querySelector('.empty-list');
   if (empty) empty.remove();
 
   const isSelf = peerId === myPeerId || name.includes('(Você)');
-  const cleanName = name.replace(/\s*\(Você\)\s*/g, '').trim() || 'Usuário';
+  const localId = isSelf ? getLocalIdentity() : null;
+  const cleanName = (isSelf && localId?.name)
+    ? localId.name
+    : (name.replace(/\s*\(Você\)\s*/g, '').trim() || 'Usuário');
   const initial = cleanName.charAt(0).toUpperCase() || 'U';
+  const resolvedAvatar = sanitizeDiscordAvatar(
+    avatarUrl || (isSelf ? localId?.avatarUrl : activeConnections[peerId]?.avatarUrl) || ''
+  );
 
   if (isSelf) {
     // Only the local user can be self
-    list.querySelectorAll('.user-item-self').forEach(el => el.remove());
+    list.querySelectorAll('.user-item-self').forEach(el => {
+      if (el.id !== 'user-' + peerId) el.remove();
+    });
   }
 
   let li = document.getElementById('user-' + peerId);
@@ -2117,19 +2340,43 @@ function updateOrAddUser(peerId, name, isHostUser) {
     list.appendChild(li);
   }
 
+  const connInfo = !isSelf ? activeConnections[peerId] : null;
+  const remoteLive = !!(connInfo && connInfo.isStreamingRemote);
+  const watchingNow = !isSelf && !!document.getElementById('stream-' + peerId);
+
   li.className = 'user-item' + (isHostUser ? ' is-host-user' : '') + (isSelf ? ' user-item-self' : '');
   li.innerHTML = `
     <div class="user-live-dot"></div>
-    <div class="user-avatar-badge ${isHostUser ? 'host-avatar' : 'client-avatar'}">${initial}</div>
+    <div class="user-avatar-badge ${isHostUser ? 'host-avatar' : 'client-avatar'}">${
+      resolvedAvatar ? `<img class="user-avatar-img" src="${escHtml(resolvedAvatar)}" alt="">` : escHtml(initial)
+    }</div>
     <div class="user-info-col">
       <div class="user-name-line">
         <span class="user-name-text">${escHtml(cleanName)}</span>
         ${isSelf ? '<span class="user-you-tag">· você</span>' : ''}
       </div>
-      <span class="user-role-sub">${isHostUser ? 'anfitrião da sala' : 'presente agora'}</span>
+      <span class="user-role-sub ${remoteLive ? 'is-live' : ''}">${
+        remoteLive ? 'transmitindo agora' : (isHostUser ? 'anfitrião da sala' : 'presente agora')
+      }</span>
     </div>
+    ${remoteLive ? `<button type="button" class="user-watch-btn ${watchingNow ? 'watching' : ''}" title="${watchingNow ? 'Sair desta transmissão' : 'Assistir transmissão'}">${watchingNow ? 'Sair' : 'Assistir'}</button>` : ''}
     ${isHostUser ? '<span class="host-pill-badge">HOST</span>' : ''}
   `;
+  const avatarImg = li.querySelector('.user-avatar-img');
+  if (avatarImg) {
+    avatarImg.addEventListener('error', () => {
+      const badge = avatarImg.parentElement;
+      if (badge) badge.textContent = initial;
+    }, { once: true });
+  }
+  const watchBtn = li.querySelector('.user-watch-btn');
+  if (watchBtn) {
+    watchBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (watchingNow) stopWatchingStream(peerId);
+      else watchRemoteStream(peerId);
+    });
+  }
   updateUserCount();
 
   // Also update stream card header if present
@@ -2143,6 +2390,25 @@ function updateOrAddUser(peerId, name, isHostUser) {
   }
 }
 const addUserToList = updateOrAddUser;
+
+window.refreshSelfRoomIdentity = function () {
+  const localId = getLocalIdentity();
+  myName = localId.name;
+  if (!peer || peer.destroyed || !myPeerId) return;
+  updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl);
+  Object.values(activeConnections).forEach((c) => {
+    if (c && c.dataConn && c.dataConn.open) {
+      try {
+        c.dataConn.send({
+          type: 'peerUpdated',
+          peerId: myPeerId,
+          name: myName,
+          avatarUrl: localId.avatarUrl
+        });
+      } catch (e) {}
+    }
+  });
+};
 
 function removeUserFromList(peerId) {
   const el = document.getElementById('user-' + peerId);
@@ -2159,6 +2425,7 @@ function removeUserFromList(peerId) {
 function updateUserCount() {
   const count = document.querySelectorAll('#userList .user-item').length;
   document.getElementById('userCount').textContent = count;
+  window.roxyDiscord?.onRoomStateChanged({ userCount: count });
 }
 
 function updatePlaceholder() {
@@ -2167,10 +2434,16 @@ function updatePlaceholder() {
   if (!cards.length) {
     document.getElementById('videoGrid').classList.remove('has-focused');
   }
+  renderAvailableStreams();
 }
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    const dpModal = document.getElementById('discordProfileModal');
+    if (dpModal && dpModal.classList.contains('active')) {
+      dpModal.classList.remove('active');
+      return;
+    }
     const focused = document.querySelector('.stream-card.focused');
     if (focused) {
       toggleFocusStreamCard(focused);
@@ -2661,12 +2934,7 @@ document.getElementById('closeContextBtn').addEventListener('click', () => {
     stopStream();
   } else if (contextTargetPeerId) {
     const peerId = contextTargetPeerId.replace('stream-', '');
-    const card = document.getElementById(contextTargetPeerId);
-    if (card) card.remove();
-    if (activeConnections[peerId]?.incomingCall) {
-      try { activeConnections[peerId].incomingCall.close(); } catch(e) {}
-      delete activeConnections[peerId].incomingCall;
-    }
+    stopWatchingStream(peerId);
   }
   menu.classList.remove('active');
   updatePlaceholder();
@@ -2742,7 +3010,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.1.4';
+const CURRENT_VERSION = '1.1.5';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

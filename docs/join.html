@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entrar na sala • Roxy Room</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --card: rgba(13, 19, 36, 0.94);
+      --border: rgba(129, 140, 248, 0.28);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #7c3aed;
+      --emerald: #34d399;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.18), transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.14), transparent 45%),
+        var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .card {
+      width: 100%;
+      max-width: 440px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 28px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(18px);
+    }
+    .logo {
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid rgba(129, 140, 248, 0.45);
+      box-shadow: 0 0 28px rgba(99, 102, 241, 0.35);
+      margin-bottom: 18px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--emerald);
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      padding: 5px 12px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+    h1 {
+      font-size: 1.38rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .room-pill {
+      display: inline-block;
+      margin: 6px 0 14px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #c7d2fe;
+      letter-spacing: 0.04em;
+    }
+    p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 22px;
+    }
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 12px 18px;
+      border-radius: 11px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      color: #fff;
+      border: 1px solid rgba(165, 180, 252, 0.4);
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+    }
+    .btn-primary:hover { transform: translateY(-1px); }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .hint {
+      margin-top: 16px;
+      font-size: 0.78rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img class="logo" src="https://cdn.discordapp.com/app-assets/1569943132269707315/1569947625594163261.png" alt="Roxy Room">
+    <div class="badge"><span class="dot"></span> Convite Discord</div>
+    <h1>Abrindo o Roxy Room...</h1>
+    <div class="room-pill" id="roomLabel">SALA</div>
+    <p id="descText">Se o aplicativo pedir confirmação no navegador, clique em <strong>Abrir Roxy Room</strong> para entrar direto na transmissão.</p>
+    <div class="actions">
+      <a class="btn btn-primary" id="openAppBtn" href="roxyroom://join/">Abrir Roxy Room na sala</a>
+      <a class="btn btn-secondary" href="https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe">Não tem o app? Baixar para Windows</a>
+    </div>
+    <div class="hint" id="hintText">Redirecionamento automático via protocolo <code>roxyroom://</code></div>
+  </main>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const rawRoom = params.get('sala') || params.get('room') || params.get('secret') || window.location.hash.replace(/^#/, '') || 'SALA-6863';
+      const room = String(rawRoom).replace(/[^a-zA-Z0-9_-]/g, '').toUpperCase() || 'SALA-6863';
+      const deepLink = 'roxyroom://join/' + encodeURIComponent(room);
+
+      document.getElementById('roomLabel').textContent = room;
+      document.title = 'Entrar em ' + room + ' • Roxy Room';
+
+      const openBtn = document.getElementById('openAppBtn');
+      openBtn.href = deepLink;
+      openBtn.textContent = 'Entrar na sala ' + room;
+
+      setTimeout(function () {
+        window.location.href = deepLink;
+      }, 180);
+    })();
+  </script>
+</body>
+</html>

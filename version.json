@@ -1,7 +1,7 @@
 {
-  "version": "1.1.4",
+  "version": "1.1.5",
   "name": "Roxy Room",
-  "changelog": "Otimização Suprema de CPU: Aceleração nativa por GPU (NVENC/D3D11), inibidor de barra isolado e economia de segundo plano.",
+  "changelog": "Integração completa com Discord (perfil, banner, servidores, voz, Spotify, Rich Presence com botão Entrar na transmissão), avatares na sala e saída/reentrada em transmissões.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

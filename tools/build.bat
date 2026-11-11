@@ -18,6 +18,7 @@ cl /EHsc /std:c++17 /utf-8 /O2 /Ot /Oi /Gy /Gw /fp:fast /W1 ^
    src\WebStreamServer.cpp ^
    src\D3D11Renderer.cpp ^
    src\NativePlayerWindow.cpp ^
+   src\DiscordManager.cpp ^
    bin\app.res ^
    /I src /I "%WV2_INC%" ^
    /Fe:bin\RoxyRoom.exe ^
@@ -25,7 +26,7 @@ cl /EHsc /std:c++17 /utf-8 /O2 /Ot /Oi /Gy /Gw /fp:fast /W1 ^
    /link ^
    "%WV2_LIB%\WebView2LoaderStatic.lib" ^
    mmdevapi.lib avrt.lib d3d11.lib dxgi.lib d3dcompiler.lib ^
-   ws2_32.lib advapi32.lib crypt32.lib ^
+   ws2_32.lib advapi32.lib crypt32.lib winhttp.lib ^
    user32.lib shell32.lib ole32.lib gdi32.lib ^
    shlwapi.lib version.lib dwmapi.lib ^
    /SUBSYSTEM:WINDOWS /ENTRY:WinMainCRTStartup /OPT:REF /OPT:ICF

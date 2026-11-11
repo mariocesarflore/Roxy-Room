@@ -33,6 +33,11 @@ public:
     int GetClientCount() const;
     int GetPort() const { return m_port; }
 
+    void SetDiscordOAuthCallback(std::function<void(const std::string&)> cb) {
+        std::lock_guard<std::mutex> lock(m_oauthCbMutex);
+        m_discordOAuthCallback = std::move(cb);
+    }
+
 private:
     void ServerThreadFunc();
     void ClientHandlerThread(SOCKET clientSocket);
@@ -51,6 +56,8 @@ private:
     std::set<SOCKET> m_wsClients;
     std::mutex m_clientsMutex;
     std::vector<BYTE> m_broadcastBuffer;  // Pre-allocated to avoid per-frame heap allocs
+    std::function<void(const std::string&)> m_discordOAuthCallback;
+    std::mutex m_oauthCbMutex;
 };
 
 #endif // WEB_STREAM_SERVER_H

@@ -24,6 +24,7 @@
 #include <tlhelp32.h>
 #include <atomic>
 #include <fstream>
+#include <cctype>
 
 #include "TrayIcon.h"
 #include "HotkeyManager.h"
@@ -31,6 +32,7 @@
 #include "DXGICapturer.h"
 #include "WebStreamServer.h"
 #include "NativePlayerWindow.h"
+#include "DiscordManager.h"
 
 using namespace Microsoft::WRL;
 
@@ -44,6 +46,7 @@ static std::unique_ptr<AudioExclusionCapturer> g_audio;
 static std::unique_ptr<DXGICapturer> g_video;
 static std::unique_ptr<WebStreamServer> g_server;
 static std::unique_ptr<NativePlayerWindow> g_nativePlayer;
+static std::unique_ptr<DiscordManager> g_discord;
 static std::atomic<bool> g_isStreaming{ false };
 static std::mutex g_streamMutex;
 static bool g_isClosing = false;
@@ -52,6 +55,9 @@ static DWORD g_webviewBrowserPid = 0;
 static std::thread g_suppressorThread;
 static std::atomic<bool> g_stopSuppressor{ false };
 static HANDLE g_hMutex = nullptr;
+static std::string g_pendingInviteSecret;
+static std::mutex g_pendingInviteMutex;
+static constexpr ULONG_PTR ROXY_COPYDATA_INVITE = 0x524F5859;
 
 void StartScreenShareBarSuppressor() {
     g_suppressorThread = std::thread([]() {
@@ -139,6 +145,107 @@ void StartScreenShareBarSuppressor() {
 #define ID_HOTKEY_STREAM 2001
 #define WM_TRAYICON (WM_USER + 1)
 #define WM_AUDIO_STATUS (WM_APP + 2)   // status do audio vindo da thread de captura -> thread da UI
+#define WM_DISCORD_MSG (WM_APP + 3)    // mensagens Discord API/IPC -> thread da UI
+
+static std::string WStringToUtf8(const std::wstring& ws) {
+    if (ws.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "";
+    std::string out(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), &out[0], len, nullptr, nullptr);
+    return out;
+}
+
+static std::wstring Utf8ToWString(const std::string& s) {
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    if (len <= 0) return L"";
+    std::wstring out(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &out[0], len);
+    return out;
+}
+
+static void PostDiscordJsonToUI(const std::string& utf8Json) {
+    if (!g_hwnd || g_isClosing) return;
+    auto* heapMsg = new std::string(utf8Json);
+    if (!PostMessageW(g_hwnd, WM_DISCORD_MSG, 0, reinterpret_cast<LPARAM>(heapMsg))) {
+        delete heapMsg;
+    }
+}
+
+static std::string EscapeJsonSimple(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        if (c == '"') out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c >= 0x20) out.push_back((char)c);
+    }
+    return out;
+}
+
+static std::string UrlDecodeAscii(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%' && i + 2 < in.size() && std::isxdigit((unsigned char)in[i + 1]) && std::isxdigit((unsigned char)in[i + 2])) {
+            int hi = std::isdigit((unsigned char)in[i + 1]) ? (in[i + 1] - '0') : (std::tolower((unsigned char)in[i + 1]) - 'a' + 10);
+            int lo = std::isdigit((unsigned char)in[i + 2]) ? (in[i + 2] - '0') : (std::tolower((unsigned char)in[i + 2]) - 'a' + 10);
+            out.push_back((char)((hi << 4) | lo));
+            i += 2;
+        } else if (in[i] == '+') {
+            out.push_back(' ');
+        } else {
+            out.push_back(in[i]);
+        }
+    }
+    return out;
+}
+
+static std::string ExtractInviteSecretFromCmdLine(const std::wstring& cmdLine) {
+    std::string u = WStringToUtf8(cmdLine);
+    if (u.empty()) return "";
+
+    auto cleanToken = [](std::string s) {
+        s = UrlDecodeAscii(s);
+        while (!s.empty() && (s.back() == '"' || s.back() == '\'' || s.back() == '/' || s.back() == ' ' || s.back() == '\r' || s.back() == '\n')) {
+            s.pop_back();
+        }
+        while (!s.empty() && (s.front() == '"' || s.front() == '\'' || s.front() == '/' || s.front() == ' ')) {
+            s.erase(s.begin());
+        }
+        return s;
+    };
+
+    // Check query parameters: ?secret=..., &secret=..., ?room=..., &room=...
+    const char* keys[] = { "secret=", "room=" };
+    for (const char* k : keys) {
+        size_t pos = u.find(k);
+        if (pos != std::string::npos) {
+            size_t start = pos + strlen(k);
+            size_t end = u.find_first_of("&#\"' \t\r\n", start);
+            std::string val = cleanToken(end == std::string::npos ? u.substr(start) : u.substr(start, end - start));
+            if (!val.empty()) return val;
+        }
+    }
+
+    // Check URI schemes: discord-<id>://... or roxyroom://...
+    size_t schemePos = u.find("://");
+    if (schemePos != std::string::npos) {
+        size_t prefixStart = u.find_last_of(" \"'\t", schemePos);
+        std::string scheme = u.substr(prefixStart == std::string::npos ? 0 : prefixStart + 1,
+            schemePos - (prefixStart == std::string::npos ? 0 : prefixStart + 1));
+        if (scheme.rfind("discord-", 0) == 0 || scheme == "roxyroom") {
+            size_t pathStart = schemePos + 3;
+            size_t pathEnd = u.find_first_of("\"' \t\r\n?#", pathStart);
+            std::string path = cleanToken(pathEnd == std::string::npos ? u.substr(pathStart) : u.substr(pathStart, pathEnd - pathStart));
+            if (path.rfind("join/", 0) == 0) path = path.substr(5);
+            if (!path.empty() && path != "join") return path;
+        }
+    }
+
+    return "";
+}
 
 // Helper: resolve web folder path
 std::wstring GetWebPath() {
@@ -300,8 +407,12 @@ void CleanExit() {
     }
     g_tray.Remove();
 
-    // 2. Stop streams and web server
+    // 2. Stop streams, Discord IPC and web server
     StopStreaming();
+    if (g_discord) {
+        g_discord->Shutdown();
+        g_discord.reset();
+    }
     if (g_server) {
         g_server->Stop();
         g_server.reset();
@@ -364,6 +475,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SendToWebView(L"{\"type\":\"audioStatus\",\"state\":\"" + *state + L"\"}");
         }
         return 0;
+    }
+
+    case WM_DISCORD_MSG: {
+        std::unique_ptr<std::string> payload(reinterpret_cast<std::string*>(lParam));
+        if (payload && !payload->empty()) {
+            SendToWebView(Utf8ToWString(*payload));
+        }
+        return 0;
+    }
+
+    case WM_COPYDATA: {
+        const COPYDATASTRUCT* cds = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+        if (cds && cds->dwData == ROXY_COPYDATA_INVITE && cds->lpData && cds->cbData > 0) {
+            const char* raw = reinterpret_cast<const char*>(cds->lpData);
+            size_t len = strnlen(raw, cds->cbData);
+            std::string secret(raw, len);
+            if (!secret.empty()) {
+                ShowWindow(hwnd, SW_SHOW);
+                ShowWindow(hwnd, SW_RESTORE);
+                if (g_controller) g_controller->put_IsVisible(TRUE);
+                SetForegroundWindow(hwnd);
+                BringWindowToTop(hwnd);
+                if (g_webview) {
+                    SendToWebView(Utf8ToWString("{\"type\":\"discordActivityJoin\",\"secret\":\"" + EscapeJsonSimple(secret) + "\"}"));
+                } else {
+                    std::lock_guard<std::mutex> lock(g_pendingInviteMutex);
+                    g_pendingInviteSecret = secret;
+                }
+            }
+            return TRUE;
+        }
+        break;
     }
 
     case WM_CLOSE:
@@ -601,6 +744,42 @@ void OnWebMessageReceived(ICoreWebView2* sender, ICoreWebView2WebMessageReceived
         std::thread([downloadUrl]() {
             PerformAppUpdate(downloadUrl);
         }).detach();
+    } else if (msg == L"discord:getServerPort") {
+        int port = g_server ? g_server->GetPort() : 8085;
+        SendToWebView(L"{\"type\":\"discordServerPort\",\"port\":" + std::to_wstring(port) + L"}");
+    } else if (msg == L"discord:pollLocal") {
+        if (g_discord) g_discord->PollLocalStatus();
+    } else if (msg == L"discord:disconnect") {
+        if (g_discord) g_discord->DisconnectIpc();
+    } else if (msg == L"discord:getVoiceChannel") {
+        if (g_discord) g_discord->GetSelectedVoiceChannel();
+    } else if (msg == L"discord:subscribeVoice") {
+        if (g_discord) g_discord->SubscribeVoiceEvents();
+    } else if (msg == L"discord:subscribeActivity") {
+        if (g_discord) g_discord->SubscribeActivityEvents();
+    } else if (msg == L"discord:getPendingInvite") {
+        std::string secret;
+        {
+            std::lock_guard<std::mutex> lock(g_pendingInviteMutex);
+            secret.swap(g_pendingInviteSecret);
+        }
+        if (!secret.empty()) {
+            SendToWebView(Utf8ToWString("{\"type\":\"discordActivityJoin\",\"secret\":\"" + EscapeJsonSimple(secret) + "\"}"));
+        }
+    } else if (msg.rfind(L"discord:acceptJoinInvite:", 0) == 0) {
+        if (g_discord) g_discord->SendActivityJoinInvite(WStringToUtf8(msg.substr(25)));
+    } else if (msg.rfind(L"discord:connectIpc:", 0) == 0) {
+        if (g_discord) g_discord->ConnectIpc(WStringToUtf8(msg.substr(19)));
+    } else if (msg.rfind(L"discord:setActivity:", 0) == 0) {
+        if (g_discord) g_discord->SetActivity(WStringToUtf8(msg.substr(20)));
+    } else if (msg.rfind(L"discord:fetchProfile:", 0) == 0) {
+        if (g_discord) g_discord->FetchProfile(WStringToUtf8(msg.substr(21)));
+    } else if (msg.rfind(L"discord:exchangeCode:", 0) == 0) {
+        if (g_discord) g_discord->ExchangeOAuthCode(WStringToUtf8(msg.substr(21)));
+    } else if (msg.rfind(L"discord:authenticateRpc:", 0) == 0) {
+        if (g_discord) g_discord->AuthenticateRpc(WStringToUtf8(msg.substr(24)));
+    } else if (msg.rfind(L"discord:authorizeRpc:", 0) == 0) {
+        if (g_discord) g_discord->AuthorizeRpc(WStringToUtf8(msg.substr(21)), "[\"rpc\",\"rpc.voice.read\"]");
     }
 }
 
@@ -832,12 +1011,20 @@ void InitWebView2(HWND hwnd) {
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     g_hInst = hInstance;
+    std::string cmdSecret = ExtractInviteSecretFromCmdLine(GetCommandLineW());
 
     // Single instance lock
     g_hMutex = CreateMutexW(nullptr, TRUE, L"RoxyRoomAppLock");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         HWND existing = FindWindowW(L"RoxyRoom", nullptr);
         if (existing && IsWindow(existing)) {
+            if (!cmdSecret.empty()) {
+                COPYDATASTRUCT cds = {};
+                cds.dwData = ROXY_COPYDATA_INVITE;
+                cds.cbData = (DWORD)(cmdSecret.size() + 1);
+                cds.lpData = const_cast<char*>(cmdSecret.c_str());
+                SendMessageW(existing, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&cds));
+            }
             ShowWindow(existing, SW_SHOW);
             ShowWindow(existing, SW_RESTORE);
             SetForegroundWindow(existing);
@@ -848,6 +1035,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         }
     }
 
+    if (!cmdSecret.empty()) {
+        std::lock_guard<std::mutex> lock(g_pendingInviteMutex);
+        g_pendingInviteSecret = cmdSecret;
+    }
+
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     // Start WebSocket streaming server
@@ -856,7 +1048,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     std::string webPathStr(size_needed, 0);
     WideCharToMultiByte(CP_UTF8, 0, webPath.c_str(), (int)webPath.length(), &webPathStr[0], size_needed, NULL, NULL);
 
+    DiscordManager::RegisterProtocolHandler("1569943132269707315");
+    g_discord = std::make_unique<DiscordManager>();
+    g_discord->SetMessageCallback([](const std::string& utf8Json) {
+        PostDiscordJsonToUI(utf8Json);
+    });
+
     g_server = std::make_unique<WebStreamServer>(8085);
+    g_server->SetDiscordOAuthCallback([](const std::string& payloadJson) {
+        PostDiscordJsonToUI("{\"type\":\"discordOAuthCallback\",\"payload\":" + payloadJson + "}");
+    });
     g_server->Start(webPathStr);
 
     // Register window class
