@@ -79,6 +79,18 @@ function loadSettings() {
   document.getElementById('fpsSelect').value = settings.fps || defaultFps;
   document.getElementById('bitrateSelect').value = settings.bitrate || defaultBitrate;
   document.getElementById('streamSoundToggle').checked = settings.streamSound !== false;
+  const savedVol = Number.isFinite(Number(settings.soundVolume))
+    ? Math.max(0, Math.min(100, Number(settings.soundVolume)))
+    : 65;
+  settings.soundVolume = savedVol;
+  settings.soundMuted = !!settings.soundMuted;
+  const volRange = document.getElementById('streamSoundVolumeRange');
+  const volVal = document.getElementById('streamSoundVolumeValue');
+  const muteToggle = document.getElementById('streamSoundMuteToggle');
+  if (volRange) volRange.value = String(savedVol);
+  if (volVal) volVal.textContent = savedVol + '%';
+  if (muteToggle) muteToggle.checked = settings.soundMuted;
+  syncSoundControlsUI();
   document.getElementById('limitMbpsToggle').checked = settings.limitMbps !== false;
   document.getElementById('mbpsRange').value = settings.mbps || '30';
   document.getElementById('mbpsInput').value = settings.mbps || '30';
@@ -93,6 +105,14 @@ function loadSettings() {
   modoDevAtivo = !!settings.modoDev;
 }
 
+function syncSoundControlsUI() {
+  const box = document.querySelector('.setting-sound-controls');
+  if (!box) return;
+  const enabled = document.getElementById('streamSoundToggle')?.checked !== false;
+  const muted = !!document.getElementById('streamSoundMuteToggle')?.checked;
+  box.classList.toggle('disabled', !enabled || muted);
+}
+
 function saveSettings() {
   try {
     settings.username = document.getElementById('usernameInput').value.trim();
@@ -102,6 +122,10 @@ function saveSettings() {
     settings.fps = document.getElementById('fpsSelect').value;
     settings.bitrate = document.getElementById('bitrateSelect').value;
     settings.streamSound = document.getElementById('streamSoundToggle').checked;
+    const volRange = document.getElementById('streamSoundVolumeRange');
+    const muteToggle = document.getElementById('streamSoundMuteToggle');
+    settings.soundVolume = volRange ? Math.max(0, Math.min(100, Number(volRange.value) || 0)) : (settings.soundVolume ?? 65);
+    settings.soundMuted = muteToggle ? !!muteToggle.checked : !!settings.soundMuted;
     settings.limitMbps = document.getElementById('limitMbpsToggle').checked;
     settings.mbps = document.getElementById('mbpsInput').value;
     settings.autoOpen = document.getElementById('autoOpenStreamsToggle').checked;
@@ -110,6 +134,7 @@ function saveSettings() {
     settings.shortcut = shortcutKey;
     localStorage.setItem('roxy-settings', JSON.stringify(settings));
   } catch(e) {}
+  syncSoundControlsUI();
   autoOpenStreams = settings.autoOpen;
   modoDevAtivo = settings.modoDev;
   const badge = document.getElementById('shortcutBadge');
@@ -156,7 +181,65 @@ function getLocalIdentity() {
   const name = (d && d.name) ? d.name : (inputName || 'Usuário ' + Math.floor(Math.random() * 1000));
   const avatarUrl = d ? sanitizeDiscordAvatar(d.avatarUrl) : '';
   const status = sanitizePeerStatus(d?.status);
-  return { name, avatarUrl, status };
+  return {
+    id: d?.id || '',
+    name,
+    username: d?.username || '',
+    discriminator: d?.discriminator || '',
+    avatarUrl,
+    bannerUrl: d?.bannerUrl || '',
+    bannerColor: d?.bannerColor || '',
+    customBanner: d?.customBanner || '',
+    customStatus: d?.customStatus || '',
+    status,
+    isStreaming: !!d?.isStreaming,
+    streamStartedAt: Number(d?.streamStartedAt) || 0,
+    spotify: d?.spotify || null,
+    voice: d?.voice || null,
+  };
+}
+
+function sanitizeRemoteProfile(src) {
+  if (!src || typeof src !== 'object') return null;
+  const out = {};
+  if (typeof src.id === 'string') out.id = src.id.slice(0, 32);
+  if (typeof src.username === 'string') out.username = src.username.slice(0, 48);
+  if (typeof src.discriminator === 'string') out.discriminator = src.discriminator.slice(0, 8);
+  if (typeof src.bannerUrl === 'string') out.bannerUrl = src.bannerUrl.slice(0, 300);
+  if (typeof src.bannerColor === 'string') out.bannerColor = src.bannerColor.slice(0, 12);
+  if (typeof src.customBanner === 'string') out.customBanner = src.customBanner.slice(0, 180000);
+  if (typeof src.customStatus === 'string') out.customStatus = src.customStatus.slice(0, 96);
+  if (src.streamStartedAt !== undefined) out.streamStartedAt = Number(src.streamStartedAt) || 0;
+  if (src.spotify && typeof src.spotify === 'object') {
+    out.spotify = {
+      playing: !!src.spotify.playing,
+      track: String(src.spotify.track || '').slice(0, 96),
+      artist: String(src.spotify.artist || '').slice(0, 72),
+    };
+  } else if (src.spotify === null) {
+    out.spotify = null;
+  }
+  if (src.voice && typeof src.voice === 'object') {
+    out.voice = {
+      inCall: !!src.voice.inCall,
+      name: String(src.voice.name || 'Chamada de voz no Discord').slice(0, 64),
+      startedAt: Number(src.voice.startedAt) || 0,
+    };
+  } else if (src.voice === null) {
+    out.voice = null;
+  }
+  return out;
+}
+
+function storeRemotePeerProfile(peerId, payload) {
+  if (!peerId || !payload) return;
+  if (!activeConnections[peerId]) activeConnections[peerId] = {};
+  const prof = sanitizeRemoteProfile(payload.profile || payload);
+  if (!prof) return;
+  activeConnections[peerId].profile = {
+    ...(activeConnections[peerId].profile || {}),
+    ...prof,
+  };
 }
 
 function joinOrCreateRoom(targetRoomId, autoStartStream = false) {
@@ -331,6 +414,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
     myName = localId.name;
 
     // Send hello with our actual name, Discord avatar and role
+    const localProfile = sanitizeRemoteProfile(localId);
     try {
       conn.send({
         type: 'hello',
@@ -339,14 +423,15 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
         status: localId.status,
         peerId: myPeerId,
         isHost: isHost,
-        isStreaming: isStreaming
+        isStreaming: isStreaming,
+        profile: localProfile
       });
       conn.send({ type: 'requestStream', peerId: myPeerId });
     } catch(e) {}
 
     // If I am Host: send full room state to new peer and announce to existing peers!
     if (isHost) {
-      const currentPeers = [{ peerId: myPeerId, name: myName, avatarUrl: localId.avatarUrl, status: localId.status, isHost: true, isStreaming: isStreaming }];
+      const currentPeers = [{ peerId: myPeerId, name: myName, avatarUrl: localId.avatarUrl, status: localId.status, isHost: true, isStreaming: isStreaming, profile: localProfile }];
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId) {
           currentPeers.push({
@@ -355,7 +440,8 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
             avatarUrl: c.avatarUrl || '',
             status: sanitizePeerStatus(c.status),
             isHost: false,
-            isStreaming: !!c.isStreamingRemote
+            isStreaming: !!c.isStreamingRemote,
+            profile: c.profile || null
           });
         }
       });
@@ -367,6 +453,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
           hostAvatarUrl: localId.avatarUrl,
           hostStatus: localId.status,
           hostStreaming: isStreaming,
+          hostProfile: localProfile,
           peers: currentPeers
         });
       } catch(e) {}
@@ -376,6 +463,7 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
       const newPeerAvatar = activeConnections[peerId]?.avatarUrl || '';
       const newPeerStatus = sanitizePeerStatus(activeConnections[peerId]?.status);
       const newPeerStreaming = !!activeConnections[peerId]?.isStreamingRemote;
+      const newPeerProfile = activeConnections[peerId]?.profile || null;
       Object.entries(activeConnections).forEach(([id, c]) => {
         if (id !== peerId && c.dataConn?.open) {
           try {
@@ -385,7 +473,8 @@ function setupDataConnection(conn, peerId, defaultName, isTargetHost = false) {
               name: newPeerName,
               avatarUrl: newPeerAvatar,
               status: newPeerStatus,
-              isStreaming: newPeerStreaming
+              isStreaming: newPeerStreaming,
+              profile: newPeerProfile
             });
           } catch(e) {}
         }
@@ -451,6 +540,7 @@ function handleDataMessage(fromPeerId, data) {
       }
       const safeAvatar = sanitizeDiscordAvatar(data.avatarUrl);
       if (safeAvatar) activeConnections[fromPeerId].avatarUrl = safeAvatar;
+      if (data.profile) storeRemotePeerProfile(fromPeerId, data.profile);
       const isRemoteHost = !!data.isHost || fromPeerId.startsWith(ROOM_PREFIX);
 
       updateOrAddUser(fromPeerId, data.name, isRemoteHost, activeConnections[fromPeerId].avatarUrl, activeConnections[fromPeerId].status);
@@ -467,7 +557,8 @@ function handleDataMessage(fromPeerId, data) {
                 peerId: fromPeerId,
                 name: data.name,
                 avatarUrl: activeConnections[fromPeerId].avatarUrl || '',
-                status: activeConnections[fromPeerId].status
+                status: activeConnections[fromPeerId].status,
+                profile: activeConnections[fromPeerId].profile || null
               });
             } catch(e) {}
           }
@@ -490,6 +581,7 @@ function handleDataMessage(fromPeerId, data) {
         activeConnections[fromPeerId].name = data.hostName;
         activeConnections[fromPeerId].status = hostStatus;
         if (hostAvatar) activeConnections[fromPeerId].avatarUrl = hostAvatar;
+        if (data.hostProfile) storeRemotePeerProfile(fromPeerId, data.hostProfile);
         if (typeof data.hostStreaming === 'boolean') {
           activeConnections[fromPeerId].isStreamingRemote = data.hostStreaming;
         }
@@ -505,6 +597,7 @@ function handleDataMessage(fromPeerId, data) {
             activeConnections[p.peerId].name = p.name;
             activeConnections[p.peerId].status = peerStatus;
             if (peerAvatar) activeConnections[p.peerId].avatarUrl = peerAvatar;
+            if (p.profile) storeRemotePeerProfile(p.peerId, p.profile);
             if (typeof p.isStreaming === 'boolean') {
               activeConnections[p.peerId].isStreamingRemote = p.isStreaming;
             }
@@ -533,6 +626,7 @@ function handleDataMessage(fromPeerId, data) {
         activeConnections[data.peerId].name = data.name;
         activeConnections[data.peerId].status = peerStatus;
         if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
+        if (data.profile) storeRemotePeerProfile(data.peerId, data.profile);
         if (typeof data.isStreaming === 'boolean') {
           activeConnections[data.peerId].isStreamingRemote = data.isStreaming;
         }
@@ -555,11 +649,11 @@ function handleDataMessage(fromPeerId, data) {
         const isRemoteHost = data.peerId.startsWith(ROOM_PREFIX);
         const peerAvatar = sanitizeDiscordAvatar(data.avatarUrl);
         const peerStatus = sanitizePeerStatus(data.status || activeConnections[data.peerId]?.status);
-        if (activeConnections[data.peerId]) {
-          activeConnections[data.peerId].name = data.name;
-          activeConnections[data.peerId].status = peerStatus;
-          if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
-        }
+        if (!activeConnections[data.peerId]) activeConnections[data.peerId] = {};
+        activeConnections[data.peerId].name = data.name;
+        activeConnections[data.peerId].status = peerStatus;
+        if (peerAvatar) activeConnections[data.peerId].avatarUrl = peerAvatar;
+        if (data.profile) storeRemotePeerProfile(data.peerId, data.profile);
         updateOrAddUser(data.peerId, data.name, isRemoteHost, peerAvatar, peerStatus);
       }
       break;
@@ -611,6 +705,7 @@ function handleDataMessage(fromPeerId, data) {
 
     case 'streamStopped': {
       if (activeConnections[fromPeerId]) {
+        const hadOpenCard = !!activeConnections[fromPeerId].streamCard || !!document.getElementById('stream-' + fromPeerId);
         activeConnections[fromPeerId].isStreamingRemote = false;
         activeConnections[fromPeerId].watchingPaused = false;
         if (activeConnections[fromPeerId].streamCard) {
@@ -622,6 +717,7 @@ function handleDataMessage(fromPeerId, data) {
           try { activeConnections[fromPeerId].incomingCall.close(); } catch(e) {}
           delete activeConnections[fromPeerId].incomingCall;
         }
+        if (hadOpenCard) playScreenSound('close');
         const c = activeConnections[fromPeerId];
         updateOrAddUser(fromPeerId, c.name || data.name || 'Amigo', fromPeerId.startsWith(ROOM_PREFIX), c.avatarUrl);
       }
@@ -1249,9 +1345,10 @@ async function startStream(sourceId, excludePid) {
   const stageStatus = document.getElementById('stageTransmissionStatus');
   if (stageStatus) stageStatus.textContent = 'transmitindo •';
 
-  if (settings.streamSound) playBeep();
+  playScreenSound('open');
   showToast('📡 Transmissão iniciada!', 'success');
   window.roxyDiscord?.onStreamStateChanged({ streaming: true });
+  if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
 
   // When user stops sharing via browser/system prompt
   const videoTrack = stream.getVideoTracks()[0];
@@ -1301,9 +1398,11 @@ function stopStream() {
   const stageStatus = document.getElementById('stageTransmissionStatus');
   if (stageStatus) stageStatus.textContent = (peer && !peer.destroyed && !peer.disconnected) ? 'conectado •' : 'aguardando transmissão •';
 
+  playScreenSound('close');
   showToast('⏹️ Transmissão encerrada.');
   updatePlaceholder();
   window.roxyDiscord?.onStreamStateChanged({ streaming: false });
+  if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
 }
 
 function callPeer(peerId, stream, force = false) {
@@ -1574,6 +1673,7 @@ function handleIncomingCall(call) {
 
   call.on('close', () => {
     const connInfo = activeConnections[peerId];
+    const hadOpenCard = !!(connInfo?.streamCard || document.getElementById('stream-' + peerId));
     if (connInfo?.streamCard) {
       if (connInfo.streamCard._cleanup) connInfo.streamCard._cleanup();
       connInfo.streamCard.remove();
@@ -1582,6 +1682,7 @@ function handleIncomingCall(call) {
     if (connInfo?.incomingCall === call) {
       delete connInfo.incomingCall;
     }
+    if (hadOpenCard) playScreenSound('close');
     if (connInfo) {
       updateOrAddUser(peerId, connInfo.name || 'Amigo', peerId.startsWith(ROOM_PREFIX), connInfo.avatarUrl);
     }
@@ -1615,6 +1716,7 @@ function showMyStreamCard(stream) {
 
 function showRemoteStreamCard(peerId, name, stream) {
   let card = document.getElementById('stream-' + peerId);
+  const isNewCard = !card;
   if (!card) {
     card = createStreamCard('stream-' + peerId, name, peerId.startsWith(ROOM_PREFIX));
     document.getElementById('videoGrid').appendChild(card);
@@ -1652,6 +1754,7 @@ function showRemoteStreamCard(peerId, name, stream) {
       }).catch(() => {});
     });
   }
+  if (isNewCard) playScreenSound('open');
   updatePlaceholder();
 
   if (modoDevAtivo) startDevStats(card, video, peerId);
@@ -2013,12 +2116,12 @@ function createStreamCard(id, name, isHostUser) {
     });
   }
 
-  // Fullscreen / Focus button
+  // Fullscreen button (real DOM fullscreen on the video stream card)
   const fsBtn = card.querySelector('.btn-fullscreen');
   if (fsBtn) {
     fsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleFocusStreamCard(card);
+      toggleElementFullscreen(card);
     });
   }
 
@@ -2256,6 +2359,7 @@ function createSourceCard(id, name, emoji) {
 function stopWatchingStream(peerId, silent = false) {
   if (!peerId) return;
   const connInfo = activeConnections[peerId];
+  const hadOpenCard = !!(connInfo?.streamCard || document.getElementById('stream-' + peerId));
   if (connInfo) {
     connInfo.watchingPaused = true;
     if (connInfo.streamCard) {
@@ -2279,12 +2383,14 @@ function stopWatchingStream(peerId, silent = false) {
   if (connInfo) {
     updateOrAddUser(peerId, connInfo.name || 'Amigo', peerId.startsWith(ROOM_PREFIX), connInfo.avatarUrl);
   }
+  if (hadOpenCard && !silent) playScreenSound('close');
   updatePlaceholder();
   if (!silent) {
     const label = connInfo?.name || 'participante';
     showToast(`👋 Você saiu da transmissão de ${label}. Pode entrar de novo quando quiser.`);
   }
 }
+window.stopWatchingStream = stopWatchingStream;
 
 function watchRemoteStream(peerId) {
   const connInfo = activeConnections[peerId];
@@ -2305,6 +2411,7 @@ function watchRemoteStream(peerId) {
     showToast('❌ Não foi possível solicitar a transmissão.', 'error');
   }
 }
+window.watchRemoteStream = watchRemoteStream;
 
 function renderAvailableStreams() {
   const box = document.getElementById('availableStreamsBox');
@@ -2400,6 +2507,36 @@ function updateOrAddUser(peerId, name, isHostUser, avatarUrl, status) {
       else watchRemoteStream(peerId);
     });
   }
+  li.title = isSelf ? 'Ver seu perfil do Discord' : `Ver informações de ${cleanName}`;
+  li.onclick = (e) => {
+    if (e.target && e.target.closest && e.target.closest('.user-watch-btn')) return;
+    if (isSelf) {
+      window.roxyDiscord?.openModal?.();
+    } else {
+      const conn = activeConnections[peerId] || {};
+      const prof = conn.profile || {};
+      window.roxyDiscord?.openPeerModal?.({
+        peerId,
+        id: prof.id || '',
+        name: cleanName,
+        username: prof.username || '',
+        discriminator: prof.discriminator || '',
+        avatarUrl: resolvedAvatar || '',
+        bannerUrl: prof.bannerUrl || '',
+        bannerColor: prof.bannerColor || '',
+        customBanner: prof.customBanner || '',
+        customStatus: prof.customStatus || '',
+        status: resolvedStatus,
+        isHost: isHostUser,
+        isStreaming: !!conn.isStreamingRemote,
+        isWatching: !!document.getElementById('stream-' + peerId),
+        streamStartedAt: Number(prof.streamStartedAt) || 0,
+        roomCode: currentRoomId || '',
+        spotify: prof.spotify || null,
+        voice: prof.voice || null,
+      });
+    }
+  };
   updateUserCount();
 
   // Also update stream card header if present
@@ -2424,7 +2561,13 @@ window.refreshSelfRoomIdentity = function () {
   _refreshingSelfIdentity = true;
   try {
     updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl, localId.status);
-    const nextKey = myName + '|' + localId.avatarUrl + '|' + localId.status;
+    const localProfile = sanitizeRemoteProfile(localId);
+    const nextKey = JSON.stringify({
+      name: myName,
+      avatarUrl: localId.avatarUrl,
+      status: localId.status,
+      profile: localProfile,
+    });
     if (nextKey !== _lastBroadcastIdentityKey) {
       _lastBroadcastIdentityKey = nextKey;
       Object.values(activeConnections).forEach((c) => {
@@ -2435,7 +2578,8 @@ window.refreshSelfRoomIdentity = function () {
               peerId: myPeerId,
               name: myName,
               avatarUrl: localId.avatarUrl,
-              status: localId.status
+              status: localId.status,
+              profile: localProfile
             });
           } catch (e) {}
         }
@@ -2493,21 +2637,73 @@ function escHtml(s) {
 }
 
 let _beepCtx = null;
-function playBeep() {
-  if (window.roxyDiscord?.getStatus?.() === 'dnd') return;
+function playScreenSound(kind = 'open', forcePreview = false) {
+  const isDnd = window.roxyDiscord?.getStatus?.() === 'dnd';
+  if (!forcePreview && (settings.streamSound === false || settings.soundMuted || isDnd)) return;
+  if (forcePreview && settings.soundMuted) {
+    showToast('🔇 Som está mutado nas configurações');
+    return;
+  }
+  const volPct = Number.isFinite(Number(settings.soundVolume))
+    ? Math.max(0, Math.min(100, Number(settings.soundVolume)))
+    : 65;
+  const peak = (volPct / 100) * 0.22;
+  if (peak <= 0.0005) return;
+
   try {
-    if (!_beepCtx || _beepCtx.state === 'closed') _beepCtx = new AudioContext();
-    const osc = _beepCtx.createOscillator();
-    const gain = _beepCtx.createGain();
-    osc.connect(gain);
-    gain.connect(_beepCtx.destination);
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.2, _beepCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, _beepCtx.currentTime + 0.25);
-    osc.start();
-    osc.stop(_beepCtx.currentTime + 0.25);
-    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!_beepCtx || _beepCtx.state === 'closed') _beepCtx = new AudioCtx();
+    if (_beepCtx.state === 'suspended') {
+      _beepCtx.resume().catch(() => {});
+    }
+
+    const now = _beepCtx.currentTime;
+    const master = _beepCtx.createGain();
+    const filter = _beepCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(kind === 'close' ? 1750 : 2300, now);
+    master.gain.setValueAtTime(1, now);
+    filter.connect(master);
+    master.connect(_beepCtx.destination);
+
+    // Warm, soft ambient notes (ascending Cmaj9 on open, soothing descending resolve on close)
+    const notes = kind === 'close'
+      ? [783.99, 659.25, 523.25, 392.0]
+      : [523.25, 659.25, 783.99, 987.77];
+    const step = kind === 'close' ? 0.068 : 0.065;
+    const dur = kind === 'close' ? 0.52 : 0.62;
+
+    notes.forEach((freq, idx) => {
+      const start = now + idx * step;
+      const osc = _beepCtx.createOscillator();
+      const noteGain = _beepCtx.createGain();
+      osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, start);
+
+      const notePeak = peak * (kind === 'close' ? (0.85 - idx * 0.12) : (0.7 + idx * 0.08));
+      noteGain.gain.setValueAtTime(0.0001, start);
+      noteGain.gain.linearRampToValueAtTime(Math.max(0.001, notePeak), start + 0.045);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+
+      osc.connect(noteGain);
+      noteGain.connect(filter);
+      osc.start(start);
+      osc.stop(start + dur + 0.02);
+      osc.onended = () => {
+        try { osc.disconnect(); noteGain.disconnect(); } catch {}
+      };
+    });
+
+    setTimeout(() => {
+      try { filter.disconnect(); master.disconnect(); } catch {}
+    }, (notes.length * step + dur + 0.12) * 1000);
   } catch {}
+}
+window.playScreenSound = playScreenSound;
+
+function playBeep() {
+  playScreenSound('open');
 }
 
 function generateRoomId() {
@@ -2611,6 +2807,31 @@ document.getElementById('profilePresetSelect').addEventListener('change', (e) =>
 
 document.getElementById('closeModalBtn').addEventListener('click', () => {
   document.getElementById('settingsModal').classList.remove('active');
+});
+
+document.getElementById('streamSoundVolumeRange')?.addEventListener('input', (e) => {
+  const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+  settings.soundVolume = val;
+  const label = document.getElementById('streamSoundVolumeValue');
+  if (label) label.textContent = val + '%';
+});
+
+document.getElementById('streamSoundMuteToggle')?.addEventListener('change', (e) => {
+  settings.soundMuted = !!e.target.checked;
+  syncSoundControlsUI();
+});
+
+document.getElementById('streamSoundToggle')?.addEventListener('change', (e) => {
+  settings.streamSound = !!e.target.checked;
+  syncSoundControlsUI();
+});
+
+document.getElementById('testOpenSoundBtn')?.addEventListener('click', () => {
+  playScreenSound('open', true);
+});
+
+document.getElementById('testCloseSoundBtn')?.addEventListener('click', () => {
+  playScreenSound('close', true);
 });
 
 document.getElementById('saveSettingsBtn').addEventListener('click', () => {
@@ -3018,23 +3239,37 @@ document.getElementById('stageConfigBtn')?.addEventListener('click', () => {
   document.getElementById('settingsBtn')?.click();
 });
 
-document.getElementById('stageFullscreenBtn')?.addEventListener('click', () => {
-  const focused = document.querySelector('.stream-card.focused');
-  if (focused) {
-    toggleFocusStreamCard(focused);
-  } else {
-    const firstCard = document.querySelector('.stream-card');
-    if (firstCard) {
-      toggleFocusStreamCard(firstCard);
-    } else {
-      const stageBox = document.querySelector('.stage-card-container');
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      } else if (stageBox && stageBox.requestFullscreen) {
-        stageBox.requestFullscreen().catch(() => {});
-      }
-    }
+function toggleElementFullscreen(preferredTarget) {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+    return;
   }
+  const target = preferredTarget
+    || document.querySelector('.stream-card.focused')
+    || document.querySelector('.stream-card')
+    || document.querySelector('.stage-card-container');
+  if (target && target.requestFullscreen) {
+    target.requestFullscreen().catch(() => {
+      if (target.classList?.contains('stream-card')) {
+        toggleFocusStreamCard(target);
+      }
+    });
+  } else if (target && target.classList?.contains('stream-card')) {
+    toggleFocusStreamCard(target);
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  const isFs = !!document.fullscreenElement;
+  const stageFsBtn = document.getElementById('stageFullscreenBtn');
+  if (stageFsBtn) {
+    stageFsBtn.classList.toggle('active', isFs);
+    stageFsBtn.title = isFs ? 'Sair da Tela Cheia (Esc)' : 'Deixar transmissão em Tela Cheia';
+  }
+});
+
+document.getElementById('stageFullscreenBtn')?.addEventListener('click', () => {
+  toggleElementFullscreen();
 });
 
 // ─── Initial Startup ──────────────────────────────────────────────────────────
@@ -3047,7 +3282,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.1.9';
+const CURRENT_VERSION = '1.2.0';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

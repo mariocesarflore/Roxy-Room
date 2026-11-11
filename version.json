@@ -1,7 +1,7 @@
 {
-  "version": "1.1.9",
+  "version": "1.2.0",
   "name": "Roxy Room",
-  "changelog": "Adiciona detecção local de chamada ativa do Discord e seletor de status (online, Ausente, Não perturbar, Invisível) integrado.",
+  "changelog": "Banner do Discord e banner personalizado no app, sons relaxantes ao abrir/fechar tela com controle de volume e mute, perfil clicável de participantes sem servidores/sair e tela cheia real da transmissão.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

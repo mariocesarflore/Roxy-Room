@@ -22,6 +22,7 @@
     tokenExpiresAt: 0,
     presenceStatus: 'online',
     customStatus: 'Transmitindo uma nova aventura em Roxy Room',
+    customBanner: '',
     serverPort: 8085,
     pkceVerifier: '',
     oauthState: '',
@@ -51,6 +52,113 @@
   let localPollInterval = null;
 
   // ─── Persistence ────────────────────────────────────────────────────────────
+  let activePeerProfile = null;
+
+  const BANNER_PRESETS = {
+    'preset:cosmic': 'radial-gradient(circle at 65% 25%, rgba(99, 102, 241, 0.48) 0%, transparent 55%), radial-gradient(circle at 20% 80%, rgba(139, 92, 246, 0.34) 0%, transparent 50%), linear-gradient(125deg, #111834 0%, #1c2856 48%, #26235b 78%, #10162c 100%)',
+    'preset:aurora': 'radial-gradient(circle at 25% 30%, rgba(20, 184, 166, 0.44) 0%, transparent 55%), radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.38) 0%, transparent 55%), linear-gradient(125deg, #07192c 0%, #0f4c5c 50%, #2a2a72 100%)',
+    'preset:sunset': 'radial-gradient(circle at 75% 25%, rgba(249, 115, 22, 0.44) 0%, transparent 55%), radial-gradient(circle at 20% 75%, rgba(219, 39, 119, 0.36) 0%, transparent 55%), linear-gradient(125deg, #1e0c29 0%, #6d184b 55%, #7c2d12 100%)',
+    'preset:emerald': 'radial-gradient(circle at 70% 25%, rgba(16, 185, 129, 0.44) 0%, transparent 55%), radial-gradient(circle at 20% 80%, rgba(5, 150, 105, 0.3) 0%, transparent 50%), linear-gradient(125deg, #061813 0%, #0b3b2e 55%, #0f2933 100%)',
+    'preset:crimson': 'radial-gradient(circle at 70% 25%, rgba(244, 63, 94, 0.46) 0%, transparent 55%), radial-gradient(circle at 25% 75%, rgba(159, 18, 57, 0.36) 0%, transparent 55%), linear-gradient(125deg, #160812 0%, #4c0d24 55%, #1d102a 100%)',
+  };
+
+  function sanitizeBannerValue(raw) {
+    if (typeof raw !== 'string') return '';
+    const v = raw.trim();
+    if (!v) return '';
+    if (BANNER_PRESETS[v]) return v;
+    if (/^https:\/\/cdn\.discordapp\.com\/banners\/[0-9]+\/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif)(?:\?size=[0-9]{2,4})?$/.test(v)) {
+      return v;
+    }
+    if (v.length <= 180000 && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v)) {
+      return v;
+    }
+    return '';
+  }
+
+  function sanitizeBannerColor(raw) {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return '#' + Math.floor(raw).toString(16).padStart(6, '0').slice(-6);
+    }
+    if (typeof raw === 'string' && /^#[0-9a-fA-F]{6}$/.test(raw.trim())) {
+      return raw.trim();
+    }
+    return '';
+  }
+
+  function sanitizePeerAvatarUrl(raw) {
+    if (typeof raw !== 'string') return '';
+    const v = raw.trim();
+    if (/^https:\/\/cdn\.discordapp\.com\/(?:avatars|embed\/avatars)\/[a-zA-Z0-9_./-]+(?:\?size=[0-9]{2,4})?$/.test(v)) {
+      return v;
+    }
+    return '';
+  }
+
+  function applyBannerToElement(bannerEl, { customBanner, bannerUrl, bannerColor }) {
+    if (!bannerEl) return;
+    const safeCustom = sanitizeBannerValue(customBanner || '');
+    const safeUrl = sanitizeBannerValue(bannerUrl || '');
+    const hex = sanitizeBannerColor(bannerColor);
+
+    if (safeCustom && BANNER_PRESETS[safeCustom]) {
+      bannerEl.style.backgroundImage = BANNER_PRESETS[safeCustom];
+    } else if (safeCustom) {
+      bannerEl.style.backgroundImage = `linear-gradient(180deg, rgba(10,15,31,0.12) 0%, rgba(10,15,31,0.72) 100%), url("${safeCustom}")`;
+    } else if (safeUrl) {
+      bannerEl.style.backgroundImage = `linear-gradient(180deg, rgba(10,15,31,0.12) 0%, rgba(10,15,31,0.72) 100%), url("${safeUrl}")`;
+    } else if (hex) {
+      bannerEl.style.backgroundImage = `radial-gradient(circle at 70% 25%, ${hex}aa 0%, transparent 60%), linear-gradient(125deg, #111834 0%, ${hex}66 55%, #10162c 100%)`;
+    } else {
+      bannerEl.style.backgroundImage = '';
+    }
+
+    document.querySelectorAll('#dpBannerPresets .dp-banner-swatch').forEach((btn) => {
+      btn.classList.toggle('active', safeCustom === btn.dataset.banner);
+    });
+  }
+
+  function compressBannerFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        reject(new Error('Nenhum arquivo'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        if (file.type === 'image/gif' && dataUrl.length <= 170000) {
+          resolve(sanitizeBannerValue(dataUrl));
+          return;
+        }
+        const img = new Image();
+        img.onerror = () => reject(new Error('Imagem inválida'));
+        img.onload = () => {
+          const targetW = 860;
+          const targetH = 240;
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          const scale = Math.max(targetW / (img.width || targetW), targetH / (img.height || targetH));
+          const drawW = img.width * scale;
+          const drawH = img.height * scale;
+          const dx = (targetW - drawW) / 2;
+          const dy = (targetH - drawH) / 2;
+          ctx.drawImage(img, dx, dy, drawW, drawH);
+          let out = canvas.toDataURL('image/webp', 0.84);
+          if (!out.startsWith('data:image/webp') || out.length > 170000) {
+            out = canvas.toDataURL('image/jpeg', 0.8);
+          }
+          resolve(sanitizeBannerValue(out));
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   function loadSavedState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -62,6 +170,7 @@
         state.presenceStatus = parsed.presenceStatus;
       }
       if (parsed.customStatus) state.customStatus = String(parsed.customStatus);
+      if (parsed.customBanner) state.customBanner = sanitizeBannerValue(parsed.customBanner);
       if (parsed.apiUser) state.apiUser = parsed.apiUser;
       if (parsed.guilds) state.guilds = parsed.guilds;
       if (parsed.connections) state.connections = parsed.connections;
@@ -79,6 +188,7 @@
         tokenExpiresAt: state.tokenExpiresAt,
         presenceStatus: state.presenceStatus,
         customStatus: state.customStatus,
+        customBanner: state.customBanner,
         apiUser: state.apiUser,
         guilds: state.guilds,
         connections: state.connections,
@@ -253,25 +363,60 @@
     }
   }
 
+  function normalizePeerProfile(peerData) {
+    if (!peerData || typeof peerData !== 'object') return null;
+    const cleanName = String(peerData.name || 'Participante').replace(/\s*\(Você\)\s*/g, '').trim().slice(0, 64) || 'Participante';
+    const rawUser = typeof peerData.username === 'string' ? peerData.username.trim().slice(0, 48) : '';
+    const rawId = typeof peerData.id === 'string' ? peerData.id.trim().slice(0, 32) : '';
+    const stKey = PRESENCE_STATUS_META[peerData.status] ? peerData.status : 'online';
+    const sp = peerData.spotify && typeof peerData.spotify === 'object' ? {
+      playing: !!peerData.spotify.playing,
+      track: String(peerData.spotify.track || '').slice(0, 96),
+      artist: String(peerData.spotify.artist || '').slice(0, 72),
+    } : null;
+    const vc = peerData.voice && typeof peerData.voice === 'object' ? {
+      inCall: !!peerData.voice.inCall,
+      name: String(peerData.voice.name || 'Chamada de voz no Discord').slice(0, 64),
+      startedAt: Number(peerData.voice.startedAt) || 0,
+    } : null;
+    return {
+      peerId: String(peerData.peerId || ''),
+      id: rawId,
+      name: cleanName,
+      username: rawUser,
+      discriminator: typeof peerData.discriminator === 'string' ? peerData.discriminator.trim().slice(0, 8) : '',
+      avatarUrl: sanitizePeerAvatarUrl(peerData.avatarUrl || ''),
+      bannerUrl: sanitizeBannerValue(peerData.bannerUrl || ''),
+      bannerColor: sanitizeBannerColor(peerData.bannerColor),
+      customBanner: sanitizeBannerValue(peerData.customBanner || ''),
+      status: stKey,
+      customStatus: String(peerData.customStatus || '').trim().slice(0, 96),
+      isHost: !!peerData.isHost,
+      isStreaming: !!peerData.isStreaming,
+      isWatching: !!peerData.isWatching,
+      streamStartedAt: Number(peerData.streamStartedAt) || 0,
+      roomCode: String(peerData.roomCode || state.roomId || '').trim().slice(0, 32),
+      spotify: sp,
+      voice: vc,
+    };
+  }
+
   function renderModal() {
-    const user = getActiveUser();
-    const displayName = getLocalDisplayName();
-    const avatarUrl = getAvatarUrl(user);
-    const bannerUrl = getBannerUrl(user);
-    const status = getEffectiveOnlineStatus();
+    const peer = activePeerProfile;
+    const modalCard = document.getElementById('discordProfileCard');
+    if (modalCard) modalCard.classList.toggle('dp-peer-view', !!peer);
+
+    const user = peer ? null : getActiveUser();
+    const displayName = peer ? peer.name : getLocalDisplayName();
+    const avatarUrl = peer ? peer.avatarUrl : getAvatarUrl(user);
+    const bannerUrl = peer ? peer.bannerUrl : getBannerUrl(user);
+    const customBanner = peer ? peer.customBanner : state.customBanner;
+    const bannerColor = peer ? peer.bannerColor : (user ? (user.banner_color || user.accent_color) : '');
+    const status = peer ? (PRESENCE_STATUS_META[peer.status] || PRESENCE_STATUS_META.online) : getEffectiveOnlineStatus();
 
     // 1. Banner
     const bannerEl = document.getElementById('dpBanner');
-    if (bannerEl) {
-      if (bannerUrl) {
-        bannerEl.style.backgroundImage = `linear-gradient(180deg, rgba(10,15,31,0.12) 0%, rgba(10,15,31,0.72) 100%), url('${bannerUrl}')`;
-      } else if (user && (user.banner_color || user.accent_color)) {
-        const hex = user.banner_color || ('#' + Number(user.accent_color).toString(16).padStart(6, '0'));
-        bannerEl.style.backgroundImage = `radial-gradient(circle at 70% 25%, ${hex}aa 0%, transparent 60%), linear-gradient(125deg, #111834 0%, ${hex}66 55%, #10162c 100%)`;
-      } else {
-        bannerEl.style.backgroundImage = '';
-      }
-    }
+    applyBannerToElement(bannerEl, { customBanner, bannerUrl, bannerColor });
 
     // 2. Modal Avatar
     const dpAvatar = document.getElementById('dpAvatar');
@@ -300,7 +445,18 @@
 
     const dpTag = document.getElementById('dpUsernameTag');
     if (dpTag) {
-      if (user) {
+      if (peer) {
+        if (peer.username && peer.id) {
+          const tagPart = (peer.discriminator && peer.discriminator !== '0')
+            ? `${peer.username}#${peer.discriminator}`
+            : `ID ${peer.id}`;
+          dpTag.textContent = `@${peer.username} • ${tagPart}`;
+        } else if (peer.username) {
+          dpTag.textContent = `@${peer.username} • na sala ${peer.roomCode || state.roomId || 'Roxy Room'}`;
+        } else {
+          dpTag.textContent = `${peer.isHost ? 'Anfitrião da sala' : 'Participante'} • ${peer.roomCode || state.roomId || 'Roxy Room'}`;
+        }
+      } else if (user) {
         const tagPart = (user.discriminator && user.discriminator !== '0')
           ? `${user.username}#${user.discriminator}`
           : `ID ${user.id}`;
@@ -312,7 +468,8 @@
 
     const dpEyebrow = document.getElementById('dpEyebrow');
     if (dpEyebrow) {
-      if (state.apiUser && state.ipcConnected) dpEyebrow.textContent = 'DISCORD • OAUTH2 + IPC ATIVO';
+      if (peer) dpEyebrow.textContent = peer.isHost ? 'ANFITRIÃO NA SALA • ROXY ROOM' : 'PARTICIPANTE NA SALA • ROXY ROOM';
+      else if (state.apiUser && state.ipcConnected) dpEyebrow.textContent = 'DISCORD • OAUTH2 + IPC ATIVO';
       else if (state.apiUser) dpEyebrow.textContent = 'DISCORD • OAUTH2 CONECTADO';
       else if (state.ipcConnected) dpEyebrow.textContent = 'DISCORD • PRESENÇA RICH (IPC)';
       else dpEyebrow.textContent = 'DISCORD • PRESENÇA RICH';
@@ -320,7 +477,16 @@
 
     // 4. Custom Status Phrase
     const customTextEl = document.getElementById('dpCustomStatusText');
-    if (customTextEl) customTextEl.textContent = state.customStatus;
+    const statusInputEl = document.getElementById('dpCustomStatusInput');
+    if (peer) {
+      if (statusInputEl) statusInputEl.style.display = 'none';
+      if (customTextEl) {
+        customTextEl.style.display = 'block';
+        customTextEl.textContent = peer.customStatus || `Na sala ${peer.roomCode || state.roomId || 'Roxy Room'}`;
+      }
+    } else if (customTextEl) {
+      customTextEl.textContent = state.customStatus;
+    }
 
     // 5. Atividade Atual
     renderCurrentActivity();
@@ -328,23 +494,46 @@
     // 6. Ouvindo Agora (Spotify)
     renderSpotifyCard();
 
-    // 7. Servidores
-    renderGuildsCard();
+    // 7 & 8. Servidores e Footer só no próprio perfil (no peer view ficam ocultos via CSS .dp-peer-view)
+    if (!peer) {
+      renderGuildsCard();
+      renderFooterAndConfig();
+    }
 
     // 8. Canal de Voz
     renderVoiceCard();
-
-    // 9. Footer & Config Inputs
-    renderFooterAndConfig();
   }
 
   function renderCurrentActivity() {
     const titleEl = document.getElementById('dpActivityTitle');
     const subEl = document.getElementById('dpActivitySub');
+    const btnEl = document.getElementById('dpViewStreamBtn');
     const btnLabel = document.getElementById('dpViewStreamLabel');
 
     if (titleEl) titleEl.textContent = 'Roxy Room';
 
+    if (activePeerProfile) {
+      const peer = activePeerProfile;
+      if (subEl) {
+        if (peer.isStreaming) {
+          const elapsed = peer.streamStartedAt > 0 ? formatDuration(Date.now() - peer.streamStartedAt) : '';
+          subEl.textContent = elapsed ? `Transmitindo tela • ${elapsed}` : 'Transmitindo tela agora';
+        } else {
+          subEl.textContent = `Na sala ${peer.roomCode || state.roomId || 'Roxy Room'} • em espera`;
+        }
+      }
+      if (btnEl) btnEl.disabled = !peer.isStreaming;
+      if (btnLabel) {
+        if (peer.isStreaming) {
+          btnLabel.textContent = peer.isWatching ? 'Sair da transmissão' : 'Assistir transmissão';
+        } else {
+          btnLabel.textContent = 'Aguardando transmissão';
+        }
+      }
+      return;
+    }
+
+    if (btnEl) btnEl.disabled = false;
     if (subEl) {
       if (state.isStreaming && state.streamStartedAt > 0) {
         const elapsed = formatDuration(Date.now() - state.streamStartedAt);
@@ -364,9 +553,25 @@
   function renderSpotifyCard() {
     const titleEl = document.getElementById('dpSpotifyTitle');
     const subEl = document.getElementById('dpSpotifySub');
+    const actionBtn = document.getElementById('dpSpotifyActionBtn');
     const actionLabel = document.getElementById('dpSpotifyActionLabel');
     const actionIcon = document.getElementById('dpSpotifyActionIcon');
 
+    if (activePeerProfile) {
+      if (actionBtn) actionBtn.style.display = 'none';
+      const sp = activePeerProfile.spotify;
+      if (sp && sp.playing && sp.track) {
+        const artist = sp.artist || 'Spotify Desktop';
+        if (titleEl) { titleEl.textContent = sp.track; titleEl.title = sp.track; }
+        if (subEl) { subEl.textContent = artist; subEl.title = artist; }
+      } else {
+        if (titleEl) { titleEl.textContent = 'Spotify'; titleEl.title = 'Spotify'; }
+        if (subEl) { subEl.textContent = 'Nenhuma música tocando agora'; subEl.title = ''; }
+      }
+      return;
+    }
+
+    if (actionBtn) actionBtn.style.display = '';
     const spotifyConn = Array.isArray(state.connections)
       ? state.connections.find((c) => c.type === 'spotify')
       : null;
@@ -455,6 +660,50 @@
     const nameEl = document.getElementById('dpVoiceChannelName');
     const subEl = document.getElementById('dpVoiceChannelSub');
     const tagsEl = document.getElementById('dpVoiceTags');
+
+    if (activePeerProfile) {
+      const peer = activePeerProfile;
+      const vc = peer.voice;
+      if (vc && vc.inCall) {
+        if (boxEl) boxEl.className = 'dp-voice-box';
+        if (dotEl) dotEl.className = 'dp-voice-dot';
+        if (eqEl) eqEl.className = 'dp-voice-eq';
+        if (nameEl) {
+          const chName = vc.name || 'Chamada de voz no Discord';
+          nameEl.textContent = chName;
+          nameEl.title = chName;
+        }
+        if (subEl) {
+          const elapsed = vc.startedAt > 0 ? formatDuration(Date.now() - vc.startedAt) : '';
+          const subText = elapsed
+            ? `${peer.name} • em call há ${elapsed}`
+            : `${peer.name} • chamada de voz ativa`;
+          subEl.textContent = subText;
+          subEl.title = subText;
+        }
+      } else {
+        if (boxEl) boxEl.className = 'dp-voice-box idle';
+        if (dotEl) dotEl.className = 'dp-voice-dot idle';
+        if (eqEl) eqEl.className = 'dp-voice-eq idle';
+        if (nameEl) {
+          nameEl.textContent = 'Nenhum canal de voz';
+          nameEl.title = 'Canal de voz';
+        }
+        if (subEl) {
+          subEl.textContent = `${peer.name} não está em call no Discord`;
+          subEl.title = subEl.textContent;
+        }
+      }
+      if (tagsEl) {
+        const tags = [
+          peer.isStreaming ? 'Streamer Ao Vivo' : 'Na Sala',
+          peer.isHost ? 'Host' : 'Participante',
+          'Roxy Club',
+        ];
+        tagsEl.innerHTML = tags.map((t) => `<span class="dp-tag">${escapeHtml(t)}</span>`).join('');
+      }
+      return;
+    }
 
     const user = getActiveUser();
     const displayName = getLocalDisplayName();
@@ -878,6 +1127,7 @@
         renderProfileSidebar();
         renderSpotifyCard();
         renderVoiceCard();
+        if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
         break;
       }
     }
@@ -887,6 +1137,9 @@
   function openModal(opts = {}) {
     const modal = document.getElementById('discordProfileModal');
     if (!modal) return;
+    activePeerProfile = null;
+    const picker = document.getElementById('dpBannerPicker');
+    if (picker) picker.style.display = 'none';
     bridgeSend('discord:pollLocal');
     if (state.accessToken) fetchDiscordApiProfile();
     if (state.ipcConnected && state.requestVoiceRpc) {
@@ -907,7 +1160,28 @@
     modal.classList.add('active');
   }
 
+  function openPeerModal(peerData) {
+    const modal = document.getElementById('discordProfileModal');
+    if (!modal) return;
+    const normalized = normalizePeerProfile(peerData);
+    if (!normalized) return;
+    activePeerProfile = normalized;
+    const picker = document.getElementById('dpBannerPicker');
+    if (picker) picker.style.display = 'none';
+    document.getElementById('dpStatusWrap')?.classList.remove('open');
+    document.getElementById('dpStatusPill')?.setAttribute('aria-expanded', 'false');
+    try {
+      renderModal();
+    } catch (e) {
+      console.error('Erro ao renderizar perfil do participante:', e);
+    }
+    modal.classList.add('active');
+  }
+
   function closeModal() {
+    activePeerProfile = null;
+    const picker = document.getElementById('dpBannerPicker');
+    if (picker) picker.style.display = 'none';
     document.getElementById('dpStatusWrap')?.classList.remove('open');
     document.getElementById('dpStatusPill')?.setAttribute('aria-expanded', 'false');
     document.getElementById('discordProfileModal')?.classList.remove('active');
@@ -936,6 +1210,7 @@
     if (statusWrap && statusPill && statusMenu) {
       statusPill.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (activePeerProfile) return;
         const nextOpen = !statusWrap.classList.contains('open');
         statusWrap.classList.toggle('open', nextOpen);
         statusPill.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
@@ -962,12 +1237,75 @@
 
     document.getElementById('closeDiscordModalBtn')?.addEventListener('click', closeModal);
 
+    // Banner customizer (presets, image upload, reset to Discord)
+    const bannerEditBtn = document.getElementById('dpBannerEditBtn');
+    const bannerPicker = document.getElementById('dpBannerPicker');
+    const bannerFileInput = document.getElementById('dpBannerFileInput');
+    if (bannerEditBtn && bannerPicker) {
+      bannerEditBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (activePeerProfile) return;
+        const isOpen = bannerPicker.style.display !== 'none';
+        bannerPicker.style.display = isOpen ? 'none' : 'flex';
+      });
+      bannerPicker.addEventListener('click', (e) => e.stopPropagation());
+      document.getElementById('dpBannerPickerCloseBtn')?.addEventListener('click', () => {
+        bannerPicker.style.display = 'none';
+      });
+      document.addEventListener('click', (e) => {
+        if (bannerPicker.style.display !== 'none' && !bannerPicker.contains(e.target) && e.target !== bannerEditBtn && !bannerEditBtn.contains(e.target)) {
+          bannerPicker.style.display = 'none';
+        }
+      });
+      document.querySelectorAll('#dpBannerPresets .dp-banner-swatch').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (activePeerProfile) return;
+          state.customBanner = sanitizeBannerValue(btn.dataset.banner || '');
+          saveState();
+          renderModal();
+          if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
+          if (typeof showToast === 'function') showToast('🎨 Banner do perfil atualizado!', 'success');
+        });
+      });
+      document.getElementById('dpBannerUploadBtn')?.addEventListener('click', () => {
+        if (activePeerProfile) return;
+        bannerFileInput?.click();
+      });
+      bannerFileInput?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file || activePeerProfile) return;
+        try {
+          const encoded = await compressBannerFile(file);
+          if (!encoded) throw new Error('Imagem excede limite');
+          state.customBanner = encoded;
+          saveState();
+          bannerPicker.style.display = 'none';
+          renderModal();
+          if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
+          if (typeof showToast === 'function') showToast('🖼️ Banner personalizado aplicado!', 'success');
+        } catch (err) {
+          if (typeof showToast === 'function') showToast('⚠️ Não foi possível carregar essa imagem de banner.', 'warn');
+        }
+      });
+      document.getElementById('dpBannerResetBtn')?.addEventListener('click', () => {
+        if (activePeerProfile) return;
+        state.customBanner = '';
+        saveState();
+        bannerPicker.style.display = 'none';
+        renderModal();
+        if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
+        if (typeof showToast === 'function') showToast('✨ Banner restaurado para o Discord');
+      });
+    }
+
     // Edit custom status phrase
     const editStatusBtn = document.getElementById('dpEditStatusBtn');
     const statusText = document.getElementById('dpCustomStatusText');
     const statusInput = document.getElementById('dpCustomStatusInput');
     if (editStatusBtn && statusText && statusInput) {
       const startEditingStatus = () => {
+        if (activePeerProfile) return;
         statusInput.value = state.customStatus;
         statusText.style.display = 'none';
         statusInput.style.display = 'block';
@@ -975,6 +1313,7 @@
         statusInput.select();
       };
       const commitStatus = () => {
+        if (activePeerProfile) return;
         const val = statusInput.value.trim();
         if (val) state.customStatus = val;
         statusInput.style.display = 'none';
@@ -982,8 +1321,10 @@
         statusText.textContent = state.customStatus;
         saveState();
         pushRichPresence();
+        if (typeof window.refreshSelfRoomIdentity === 'function') window.refreshSelfRoomIdentity();
       };
       editStatusBtn.addEventListener('click', () => {
+        if (activePeerProfile) return;
         if (statusInput.style.display === 'none') startEditingStatus();
         else commitStatus();
       });
@@ -998,8 +1339,19 @@
       statusInput.addEventListener('blur', commitStatus);
     }
 
-    // Ver transmissão / Transmitir agora
+    // Ver transmissão / Transmitir agora (ou assistir transmissão do participante)
     document.getElementById('dpViewStreamBtn')?.addEventListener('click', () => {
+      if (activePeerProfile) {
+        const peer = activePeerProfile;
+        closeModal();
+        if (!peer.isStreaming || !peer.peerId) return;
+        if (peer.isWatching && typeof window.stopWatchingStream === 'function') {
+          window.stopWatchingStream(peer.peerId);
+        } else if (typeof window.watchRemoteStream === 'function') {
+          window.watchRemoteStream(peer.peerId);
+        }
+        return;
+      }
       closeModal();
       if (state.isStreaming) {
         const firstCard = document.querySelector('.stream-card');
@@ -1070,15 +1422,51 @@
       renderVoiceCard();
     },
     openModal,
+    openPeerModal,
+    closeModal,
     getStatus() {
       return getEffectiveOnlineStatus().key;
     },
     getProfileIdentity() {
       const u = getActiveUser();
+      const bannerColor = u
+        ? sanitizeBannerColor(u.banner_color || u.accent_color)
+        : '';
+      const sp = state.spotifyLocal && state.spotifyLocal.playing
+        ? {
+            playing: true,
+            track: String(state.spotifyLocal.track || state.spotifyLocal.title || '').slice(0, 96),
+            artist: String(state.spotifyLocal.artist || '').slice(0, 72),
+          }
+        : null;
+      const vc = (state.voiceChannel && state.voiceChannel.name)
+        ? {
+            inCall: true,
+            name: String(state.voiceChannel.name).slice(0, 64),
+            startedAt: 0,
+          }
+        : ((state.voiceLocal && state.voiceLocal.inCall)
+            ? {
+                inCall: true,
+                name: 'Chamada de voz no Discord',
+                startedAt: Number(state.voiceLocal.startedAt) || 0,
+              }
+            : null);
       return {
+        id: u && u.id ? String(u.id) : '',
         name: getLocalDisplayName(),
+        username: u && u.username ? String(u.username) : '',
+        discriminator: u && u.discriminator ? String(u.discriminator) : '',
         avatarUrl: u ? getAvatarUrl(u) : '',
+        bannerUrl: u ? getBannerUrl(u) : '',
+        bannerColor,
+        customBanner: sanitizeBannerValue(state.customBanner || ''),
+        customStatus: String(state.customStatus || '').slice(0, 96),
         status: getEffectiveOnlineStatus().key,
+        isStreaming: !!state.isStreaming,
+        streamStartedAt: state.isStreaming ? (state.streamStartedAt || 0) : 0,
+        spotify: sp,
+        voice: vc,
       };
     },
   };
@@ -1110,6 +1498,11 @@
 
   // Live timer tick for streaming elapsed time & active voice call duration
   activityTimerInterval = setInterval(() => {
+    if (activePeerProfile) {
+      if (activePeerProfile.isStreaming) renderCurrentActivity();
+      if (activePeerProfile.voice && activePeerProfile.voice.inCall) renderVoiceCard();
+      return;
+    }
     if (state.isStreaming) {
       renderCurrentActivity();
     }
