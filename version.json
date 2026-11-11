@@ -1,7 +1,7 @@
 {
-  "version": "1.1.5",
+  "version": "1.1.6",
   "name": "Roxy Room",
-  "changelog": "Integração completa com Discord (perfil, banner, servidores, voz, Spotify, Rich Presence com botão Entrar na transmissão), avatares na sala e saída/reentrada em transmissões.",
+  "changelog": "Corrige recursão ao abrir o modal de perfil do Discord dentro de uma sala e remove placeholders de nome padrão.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

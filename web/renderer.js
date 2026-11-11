@@ -71,7 +71,7 @@ function loadSettings() {
   const defaultFps = '60';
   const defaultBitrate = '8000000'; // 8 Mbps baseline for crystal-clear 60fps gaming
 
-  document.getElementById('usernameInput').value = settings.username || 'Mario';
+  document.getElementById('usernameInput').value = settings.username || 'Usuário';
   document.getElementById('roomId').value = settings.lastRoom || 'SALA-6863';
   updateAvatar();
   document.getElementById('profilePresetSelect').value = settings.profilePreset || 'auto';
@@ -2391,23 +2391,35 @@ function updateOrAddUser(peerId, name, isHostUser, avatarUrl) {
 }
 const addUserToList = updateOrAddUser;
 
+let _refreshingSelfIdentity = false;
+let _lastBroadcastIdentityKey = '';
 window.refreshSelfRoomIdentity = function () {
+  if (_refreshingSelfIdentity) return;
   const localId = getLocalIdentity();
   myName = localId.name;
   if (!peer || peer.destroyed || !myPeerId) return;
-  updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl);
-  Object.values(activeConnections).forEach((c) => {
-    if (c && c.dataConn && c.dataConn.open) {
-      try {
-        c.dataConn.send({
-          type: 'peerUpdated',
-          peerId: myPeerId,
-          name: myName,
-          avatarUrl: localId.avatarUrl
-        });
-      } catch (e) {}
+  _refreshingSelfIdentity = true;
+  try {
+    updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl);
+    const nextKey = myName + '|' + localId.avatarUrl;
+    if (nextKey !== _lastBroadcastIdentityKey) {
+      _lastBroadcastIdentityKey = nextKey;
+      Object.values(activeConnections).forEach((c) => {
+        if (c && c.dataConn && c.dataConn.open) {
+          try {
+            c.dataConn.send({
+              type: 'peerUpdated',
+              peerId: myPeerId,
+              name: myName,
+              avatarUrl: localId.avatarUrl
+            });
+          } catch (e) {}
+        }
+      });
     }
-  });
+  } finally {
+    _refreshingSelfIdentity = false;
+  }
 };
 
 function removeUserFromList(peerId) {
@@ -3010,7 +3022,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.1.5';
+const CURRENT_VERSION = '1.1.6';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

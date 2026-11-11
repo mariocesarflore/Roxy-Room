@@ -138,8 +138,8 @@
   }
 
   function getInitials(name) {
-    const clean = String(name || 'M').trim();
-    if (!clean) return 'M';
+    const clean = String(name || 'U').trim();
+    if (!clean) return 'U';
     const parts = clean.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return clean.slice(0, 2).toUpperCase();
@@ -151,9 +151,9 @@
 
   function getLocalDisplayName() {
     const u = getActiveUser();
-    if (u) return u.global_name || u.username || 'Mario';
+    if (u) return u.global_name || u.username || 'Usuário';
     const input = document.getElementById('usernameInput');
-    return (input && input.value.trim()) || 'Mario';
+    return (input && input.value.trim()) || 'Usuário';
   }
 
   function getEffectiveOnlineStatus() {
@@ -189,7 +189,7 @@
       if (avatarUrl) {
         avatarEl.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`;
       } else {
-        avatarEl.textContent = displayName.charAt(0).toUpperCase() || 'M';
+        avatarEl.textContent = displayName.charAt(0).toUpperCase() || 'U';
       }
     }
 
@@ -259,7 +259,7 @@
       if (avatarUrl) {
         dpAvatar.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`;
       } else {
-        dpAvatar.textContent = displayName.charAt(0).toUpperCase() || 'M';
+        dpAvatar.textContent = displayName.charAt(0).toUpperCase() || 'U';
       }
     }
 
@@ -838,7 +838,11 @@
     if (state.ipcConnected && state.requestVoiceRpc) {
       bridgeSend('discord:getVoiceChannel');
     }
-    renderAll();
+    try {
+      renderAll();
+    } catch (e) {
+      console.error('Erro ao renderizar modal Discord:', e);
+    }
     modal.classList.add('active');
   }
 
@@ -942,12 +946,23 @@
   // ─── Public Hooks for renderer.js ───────────────────────────────────────────
   window.roxyDiscord = {
     onRoomStateChanged({ roomId, connected, isHost, userCount }) {
-      if (roomId !== undefined) state.roomId = roomId || 'SALA-6863';
-      if (connected !== undefined) state.roomConnected = !!connected;
-      if (isHost !== undefined) state.isHost = !!isHost;
+      let activityChanged = false;
+      const nextRoom = roomId !== undefined ? (roomId || 'SALA-6863') : state.roomId;
+      if (roomId !== undefined && state.roomId !== nextRoom) {
+        state.roomId = nextRoom;
+        activityChanged = true;
+      }
+      if (connected !== undefined && state.roomConnected !== !!connected) {
+        state.roomConnected = !!connected;
+        activityChanged = true;
+      }
+      if (isHost !== undefined && state.isHost !== !!isHost) {
+        state.isHost = !!isHost;
+        activityChanged = true;
+      }
       if (userCount !== undefined) state.roomUserCount = Number(userCount) || 0;
       pushRichPresence();
-      renderAll();
+      if (activityChanged) renderModal();
     },
     onStreamStateChanged({ streaming }) {
       state.isStreaming = !!streaming;
