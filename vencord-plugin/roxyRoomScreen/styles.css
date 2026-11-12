@@ -11,16 +11,22 @@
     top: 48px;
     left: 0;
     right: 0;
-    bottom: 76px;
+    bottom: 0;
     z-index: 25;
     background: #000000;
-    padding: 8px 14px;
+    padding: 8px 14px 76px 14px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     contain: layout paint style;
+}
+
+/* Oculta os participantes e tiles nativos do Discord por baixo para não vazar barras ou bordas */
+[class*="callContainer_"]:has(.roxy-vc-stage-overlay) [class*="videoGrid_"],
+[class*="callContainer_"]:has(.roxy-vc-stage-overlay) [class*="scroller_"]:has([class*="tile_"]) {
+    visibility: hidden !important;
 }
 
 .roxy-vc-stage-grid {

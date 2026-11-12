@@ -10,7 +10,10 @@ export const ICE_SERVERS: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
     { urls: "stun:global.stun.twilio.com:3478" },
+    { urls: "stun:stun.services.mozilla.com" },
     {
         urls: "turn:openrelay.metered.ca:80",
         username: "openrelayproject",
@@ -326,7 +329,7 @@ export class RoxyEngine {
                 clientType: c.profile?.client === "vencord" ? "vencord" : "roxy"
             });
 
-            if (c.remoteStream && c.remoteStream.active) {
+            if (c.remoteStream && (c.remoteStream.active || c.remoteStream.getVideoTracks().length > 0)) {
                 const { width, height, fps } = extractVideoStats(c.remoteStream);
                 remoteStreams.push({
                     peerId: c.peerId,
@@ -1064,6 +1067,51 @@ export class RoxyEngine {
         }
     }
 
+    private runMeshMaintenance() {
+        if (!this.peer || this.peer.destroyed || this.connectionStatus !== "connected") return;
+
+        // 1. Envia ping para peers conectados
+        this.connections.forEach(c => {
+            if (c.dataConn?.open) {
+                try {
+                    c.dataConn.send({ type: "ping", peerId: this.myPeerId });
+                } catch {}
+            }
+        });
+
+        // 2. Se estou transmitindo, garante que todos os peers com dataConn aberto recebam chamada de vídeo
+        if (this.isStreaming && this.localStream) {
+            this.connections.forEach((c, id) => {
+                if (c.dataConn?.open) {
+                    const hasActiveCall = c.outgoingCall && !c.outgoingCall.destroyed && c.outgoingCall.open;
+                    if (!hasActiveCall && !c.isCalling) {
+                        this.callPeer(id, this.localStream!, false);
+                    }
+                }
+            });
+        }
+
+        // 3. Se um peer remoto está transmitindo e eu não tenho o vídeo ativo, pede a stream de volta
+        this.connections.forEach(c => {
+            if (c.isStreamingRemote && !c.watchingPaused && this.autoWatchStreams && c.dataConn?.open) {
+                const hasLiveTrack = c.remoteStream?.getVideoTracks?.().some(t => t.readyState === "live");
+                if (!hasLiveTrack) {
+                    try {
+                        c.dataConn.send({ type: "requestStream", peerId: this.myPeerId });
+                    } catch {}
+                }
+            }
+        });
+
+        // 4. Se sou cliente e perdi contato com o anfitrião, tenta reconectar
+        if (!this.isHost && this.hostPeerId && this.hostPeerId !== this.myPeerId) {
+            const hostConn = this.connections.get(this.hostPeerId);
+            if (!hostConn || !hostConn.dataConn || !hostConn.dataConn.open) {
+                this.connectToPeer(this.hostPeerId, "Anfitrião", true);
+            }
+        }
+    }
+
     private bindPeerEvents(peerInstance: any, room: string) {
         peerInstance.on("open", (id: string) => {
             if (this.peer !== peerInstance || this.destroyed) return;
@@ -1077,8 +1125,10 @@ export class RoxyEngine {
 
             if (this.requestPollTimer) {
                 clearInterval(this.requestPollTimer);
-                this.requestPollTimer = null;
             }
+            this.requestPollTimer = setInterval(() => {
+                this.runMeshMaintenance();
+            }, 2500);
 
             this.emit();
         });
@@ -1120,6 +1170,14 @@ export class RoxyEngine {
                     existing.incomingCall = undefined;
                     existing.remoteStream = undefined;
                     if (this.spotlightPeerId === fromPeer) this.spotlightPeerId = null;
+                    this.emit();
+                }
+            });
+
+            call.on("error", () => {
+                if (existing.incomingCall === call) {
+                    existing.incomingCall = undefined;
+                    existing.remoteStream = undefined;
                     this.emit();
                 }
             });
@@ -1215,7 +1273,14 @@ export class RoxyEngine {
                     isStreaming: this.isStreaming,
                     profile: this.localProfile
                 });
+                // Solicita stream imediatamente ao abrir canal (igual ao app standalone)
+                conn.send({ type: "requestStream", peerId: this.myPeerId });
             } catch {}
+
+            // Se eu já estiver transmitindo, liga para o novo peer na mesma hora
+            if (this.isStreaming && this.localStream) {
+                this.callPeer(remoteId, this.localStream, false);
+            }
 
             if (this.isHost) {
                 const peersPayload: any[] = [];
@@ -1267,6 +1332,20 @@ export class RoxyEngine {
         const isRemoteHost = fromPeerId.startsWith(ROOM_PREFIX);
 
         switch (data.type) {
+            case "ping": {
+                const c = this.connections.get(fromPeerId);
+                if (c?.dataConn?.open) {
+                    try {
+                        c.dataConn.send({ type: "pong", peerId: this.myPeerId });
+                    } catch {}
+                }
+                break;
+            }
+
+            case "pong": {
+                break;
+            }
+
             case "hello": {
                 const isNew = !this.connections.has(fromPeerId);
                 const entry = this.ensurePeerEntry(fromPeerId, data.name || "Amigo", isRemoteHost);
@@ -1517,17 +1596,47 @@ export class RoxyEngine {
             entry.outgoingCall = call;
 
             if (call.peerConnection) {
+                try {
+                    if (typeof RTCRtpSender.getCapabilities === "function") {
+                        const caps = RTCRtpSender.getCapabilities("video");
+                        if (caps && caps.codecs) {
+                            const h264Hw = caps.codecs.filter(c =>
+                                c.mimeType.toLowerCase() === "video/h264" &&
+                                c.sdpFmtpLine && c.sdpFmtpLine.includes("packetization-mode=1")
+                            );
+                            const h264Rest = caps.codecs.filter(c =>
+                                c.mimeType.toLowerCase() === "video/h264" &&
+                                (!c.sdpFmtpLine || !c.sdpFmtpLine.includes("packetization-mode=1"))
+                            );
+                            const vp8 = caps.codecs.filter(c => c.mimeType.toLowerCase() === "video/vp8");
+                            const others = caps.codecs.filter(c =>
+                                c.mimeType.toLowerCase() !== "video/h264" && c.mimeType.toLowerCase() !== "video/vp8"
+                            );
+                            const sorted = [...h264Hw, ...vp8, ...h264Rest, ...others];
+                            call.peerConnection.getTransceivers().forEach((tr: any) => {
+                                if (tr.sender?.track?.kind === "video" && typeof tr.setCodecPreferences === "function") {
+                                    tr.setCodecPreferences(sorted);
+                                }
+                            });
+                        }
+                    }
+                } catch {}
                 this.tuneSenderConnection(call.peerConnection);
             }
 
-            setTimeout(() => {
-                if (entry.isCalling) entry.isCalling = false;
-            }, 3000);
+            call.on("error", () => {
+                entry.isCalling = false;
+                if (entry.outgoingCall === call) entry.outgoingCall = undefined;
+            });
 
             call.on("close", () => {
                 entry.isCalling = false;
                 if (entry.outgoingCall === call) entry.outgoingCall = undefined;
             });
+
+            setTimeout(() => {
+                if (entry.isCalling) entry.isCalling = false;
+            }, 3000);
         } catch {
             entry.isCalling = false;
         }

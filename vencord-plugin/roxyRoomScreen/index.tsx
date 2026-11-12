@@ -397,15 +397,18 @@ export default definePlugin({
             syncVoiceAndProfile();
             scheduleSyncMounts(true);
         },
-        VOICE_STATE_UPDATES(event: any) {
-            const vcId = SelectedChannelStore?.getVoiceChannelId?.();
-            if (!vcId) return;
-            const states = Array.isArray(event?.voiceStates) ? event.voiceStates : [];
-            if (states.some((s: any) => s?.channelId === vcId || s?.oldChannelId === vcId)) {
-                scheduleSyncMounts(true);
+        VOICE_STATE_UPDATES() {
+            const currentVcId = SelectedChannelStore?.getVoiceChannelId?.() || null;
+            if (currentVcId !== engine.getSnapshot().voiceChannelId) {
+                syncVoiceAndProfile();
             }
+            scheduleSyncMounts(true);
         },
         CHANNEL_SELECT() {
+            const currentVcId = SelectedChannelStore?.getVoiceChannelId?.() || null;
+            if (currentVcId !== engine.getSnapshot().voiceChannelId) {
+                syncVoiceAndProfile();
+            }
             scheduleSyncMounts(true);
         },
         CURRENT_USER_UPDATE() {
@@ -452,10 +455,14 @@ export default definePlugin({
         });
 
         safetyInterval = setInterval(() => {
-            const vcId = SelectedChannelStore?.getVoiceChannelId?.();
+            const vcId = SelectedChannelStore?.getVoiceChannelId?.() || null;
+            const snap = engine.getSnapshot();
+            if (vcId !== snap.voiceChannelId || (vcId && snap.connectionStatus === "disconnected")) {
+                syncVoiceAndProfile();
+            }
             if (!vcId && !panelMount && !stageMount) return;
             syncMounts();
-        }, 3000);
+        }, 1500);
     },
 
     stop() {
