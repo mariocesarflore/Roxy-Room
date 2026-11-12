@@ -487,7 +487,11 @@ void WebStreamServer::BroadcastVideoFrame(const std::vector<BYTE>& frameData, in
 void WebStreamServer::BroadcastAudioChunk(const BYTE* pData, UINT32 size, int sampleRate, int channels) {
     if (!pData || size == 0) return;
 
-    std::vector<SOCKET> clientSnapshot;
+    // Buffers reaproveitados: este método roda ~100x por segundo durante a transmissão
+    // e alocava dois std::vector por pacote (heap churn no caminho de áudio).
+    static thread_local std::vector<SOCKET> clientSnapshot;
+    static thread_local std::vector<SOCKET> disconnected;
+    clientSnapshot.clear();
     {
         std::lock_guard<std::mutex> lock(m_clientsMutex);
         if (m_wsClients.empty()) return;
@@ -505,7 +509,7 @@ void WebStreamServer::BroadcastAudioChunk(const BYTE* pData, UINT32 size, int sa
     audioHeader[6] = (channels >> 8) & 0xFF;
     audioHeader[7] = channels & 0xFF;
 
-    std::vector<SOCKET> disconnected;
+    disconnected.clear();
     for (SOCKET s : clientSnapshot) {
         if (!SendWebSocketFrameScatter(s, 0x2, audioHeader, sizeof(audioHeader), pData, size)) {
             disconnected.push_back(s);

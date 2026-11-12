@@ -72,11 +72,11 @@ function sanitizeRoom(raw) {
 function getInitialRoom() {
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const qRoom = urlParams.get('room');
+    const qRoom = urlParams.get('room') || urlParams.get('sala');
     if (qRoom) return sanitizeRoom(qRoom);
 
     const hash = window.location.hash.replace('#', '');
-    if (hash && (hash.startsWith('SALA-') || hash.startsWith('ROXY-') || hash.startsWith('MDP-') || hash.length <= 15)) {
+    if (hash && (hash.startsWith('SALA-') || hash.startsWith('DC-') || hash.startsWith('ROXY-') || hash.startsWith('MDP-') || hash.length <= 36)) {
       return sanitizeRoom(hash);
     }
   } catch (e) {}

@@ -320,21 +320,29 @@ struct SpotifyFindCtx {
     std::wstring title;
 };
 
-static std::vector<DWORD> FindProcessIdsByExe(const wchar_t* exeName) {
-    std::vector<DWORD> pids;
+// Uma ÚNICA passada em CreateToolhelp32Snapshot resolve todos os executáveis pedidos.
+// Antes, PollLocalStatus (a cada 5 s) fazia 5 snapshots completos da lista de processos.
+static void SnapshotProcessIdsByName(
+    const wchar_t* const* exeNames,
+    size_t exeCount,
+    std::vector<std::vector<DWORD>>& outPids)
+{
+    outPids.assign(exeCount, {});
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return pids;
+    if (snap == INVALID_HANDLE_VALUE) return;
     PROCESSENTRY32W pe;
     pe.dwSize = sizeof(pe);
     if (Process32FirstW(snap, &pe)) {
         do {
-            if (_wcsicmp(pe.szExeFile, exeName) == 0) {
-                pids.push_back(pe.th32ProcessID);
+            for (size_t i = 0; i < exeCount; ++i) {
+                if (_wcsicmp(pe.szExeFile, exeNames[i]) == 0) {
+                    outPids[i].push_back(pe.th32ProcessID);
+                    break;
+                }
             }
         } while (Process32NextW(snap, &pe));
     }
     CloseHandle(snap);
-    return pids;
 }
 
 struct DiscordVoiceProbeResult {
@@ -462,16 +470,20 @@ static DiscordVoiceProbeResult ProbeDiscordLocalVoiceCall(const std::vector<DWOR
 
 void DiscordManager::PollLocalStatus() {
     std::thread([this]() {
-        std::vector<DWORD> discordPids = FindProcessIdsByExe(L"Discord.exe");
-        auto canaryPids = FindProcessIdsByExe(L"DiscordCanary.exe");
-        auto ptbPids = FindProcessIdsByExe(L"DiscordPTB.exe");
-        discordPids.insert(discordPids.end(), canaryPids.begin(), canaryPids.end());
-        discordPids.insert(discordPids.end(), ptbPids.begin(), ptbPids.end());
+        static const wchar_t* kProbeExes[] = {
+            L"Discord.exe", L"DiscordCanary.exe", L"DiscordPTB.exe", L"Spotify.exe"
+        };
+        std::vector<std::vector<DWORD>> probePids;
+        SnapshotProcessIdsByName(kProbeExes, 4, probePids);
+
+        std::vector<DWORD>& discordPids = probePids[0];
+        discordPids.insert(discordPids.end(), probePids[1].begin(), probePids[1].end());
+        discordPids.insert(discordPids.end(), probePids[2].begin(), probePids[2].end());
         bool discordRunning = !discordPids.empty();
         DiscordVoiceProbeResult voiceProbe = ProbeDiscordLocalVoiceCall(discordPids);
 
         SpotifyFindCtx ctx;
-        ctx.pids = FindProcessIdsByExe(L"Spotify.exe");
+        ctx.pids = std::move(probePids[3]);
         bool spotifyRunning = !ctx.pids.empty();
         bool spotifyPlaying = false;
         std::string spotifyTitle;

@@ -71,8 +71,13 @@ function loadSettings() {
   const defaultFps = '60';
   const defaultBitrate = '8000000'; // 8 Mbps baseline for crystal-clear 60fps gaming
 
+  let urlRoom = '';
+  try {
+    const qp = new URLSearchParams(window.location.search);
+    urlRoom = getCleanRoom(qp.get('room') || qp.get('sala') || '');
+  } catch {}
   document.getElementById('usernameInput').value = settings.username || 'Usuário';
-  document.getElementById('roomId').value = settings.lastRoom || 'SALA-6863';
+  document.getElementById('roomId').value = urlRoom || settings.lastRoom || 'SALA-6863';
   updateAvatar();
   document.getElementById('profilePresetSelect').value = settings.profilePreset || 'auto';
   document.getElementById('resSelect').value = settings.res || '1080';
@@ -175,13 +180,19 @@ function sanitizePeerStatus(status) {
   return ['online', 'idle', 'dnd', 'offline'].includes(status) ? status : 'online';
 }
 
+// Cache curto da identidade local: esta função é chamada por heartbeat, mensagens P2P,
+// poll do Discord e renderizações. 250 ms elimina dezenas de leituras de DOM por segundo.
+let _identityCache = { at: 0, value: null };
+
 function getLocalIdentity() {
+  const now = Date.now();
+  if (_identityCache.value && now - _identityCache.at < 250) return _identityCache.value;
   const d = window.roxyDiscord?.getProfileIdentity?.();
   const inputName = document.getElementById('usernameInput')?.value.trim() || '';
   const name = (d && d.name) ? d.name : (inputName || 'Usuário ' + Math.floor(Math.random() * 1000));
   const avatarUrl = d ? sanitizeDiscordAvatar(d.avatarUrl) : '';
   const status = sanitizePeerStatus(d?.status);
-  return {
+  const identity = {
     id: d?.id || '',
     name,
     username: d?.username || '',
@@ -197,6 +208,9 @@ function getLocalIdentity() {
     spotify: d?.spotify || null,
     voice: d?.voice || null,
   };
+  _identityCache.at = now;
+  _identityCache.value = identity;
+  return identity;
 }
 
 function sanitizeRemoteProfile(src) {
@@ -773,11 +787,13 @@ function updateStatus(text, connected) {
     else stageStatus.textContent = 'aguardando transmissão •';
   }
 
+  const userListEl = document.getElementById('userList');
   window.roxyDiscord?.onRoomStateChanged({
     roomId: room,
     connected: !!connected,
     isHost: !!isHost,
-    userCount: document.querySelectorAll('#userList .user-item').length
+    // getElementsByClassName é uma coleção viva: .length não re-parseia seletor
+    userCount: userListEl ? userListEl.getElementsByClassName('user-item').length : 0
   });
 }
 
@@ -829,7 +845,12 @@ setInterval(() => {
   if (!peer || peer.destroyed || !currentRoomId) return;
   const now = Date.now();
 
-  Object.entries(activeConnections).forEach(([peerId, connInfo]) => {
+  // Laço direto (sem Object.entries) para não alocar um array de pares a cada 2,5 s
+  const stale = [];
+  for (const peerId in activeConnections) {
+    const connInfo = activeConnections[peerId];
+    if (!connInfo) continue;
+
     // Send ping
     if (connInfo.dataConn?.open) {
       try { connInfo.dataConn.send({ type: 'ping', peerId: myPeerId }); } catch(e) {}
@@ -837,11 +858,14 @@ setInterval(() => {
 
     // Check timeout (stale after 6s of no response)
     const lastSeen = connInfo.lastSeen || now;
-    if (now - lastSeen > 6000) {
+    if (now - lastSeen > 6000) stale.push(peerId);
+  }
+  if (stale.length) {
+    for (const peerId of stale) {
       console.warn(`[Mesh] Peer ${peerId} sem resposta ha mais de 6s. Desconectando...`);
       removePeer(peerId);
     }
-  });
+  }
 }, 2500);
 
 // Notify peers immediately on window close / navigation
@@ -981,7 +1005,9 @@ function initCleanAudioTrack(excludePid) {
       }
       _audioAvailable -= samplesToRead;
       if (framesAvail < frameCount) {
-        for (let i = framesAvail; i < frameCount; i++) { outL[i] = 0; outR[i] = 0; }
+        // fill() em vez de laço JS: roda na thread principal a cada ~42 ms
+        outL.fill(0, framesAvail);
+        outR.fill(0, framesAvail);
         _audioPrimed = false;
       }
     };
@@ -2156,6 +2182,10 @@ function createStreamCard(id, name, isHostUser) {
     isDragging = true;
     startX = e.clientX - offsetX;
     startY = e.clientY - offsetY;
+    // Listeners globais existem SOMENTE durante o arrasto. Antes, cada card registrava
+    // um mousemove em window para sempre (N cards = N callbacks por evento de mouse).
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    window.addEventListener('mouseup', onMouseUp, { passive: true });
   });
 
   // Click on video area (not buttons) toggles play/pause or focus
@@ -2177,18 +2207,25 @@ function createStreamCard(id, name, isHostUser) {
     applyTransform();
   };
 
-  const onMouseUp = () => { isDragging = false; };
-
-  window.addEventListener('mousemove', onMouseMove);
-  window.addEventListener('mouseup', onMouseUp);
+  const onMouseUp = () => {
+    isDragging = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
 
   // Auto-hide control bar on inactivity
   let hideControlsTimer = null;
+  let lastActivityAt = 0;
   const playerBar = card.querySelector('.stream-player-bar');
   const headerOverlay = card.querySelector('.stream-header');
 
+  // Throttle: mousemove dispara até 120x/s. Recriar o timer a cada evento gerava
+  // milhares de timers por minuto; agora só rearmamos a cada 200 ms.
   const onCardMouseMove = () => {
-    card.classList.add('user-active');
+    const now = performance.now();
+    if (now - lastActivityAt < 200) return;
+    lastActivityAt = now;
+    if (!card.classList.contains('user-active')) card.classList.add('user-active');
     clearTimeout(hideControlsTimer);
     hideControlsTimer = setTimeout(() => {
       card.classList.remove('user-active');
@@ -2413,17 +2450,32 @@ function watchRemoteStream(peerId) {
 }
 window.watchRemoteStream = watchRemoteStream;
 
+let _availableStreamsKey = null;
+
 function renderAvailableStreams() {
   const box = document.getElementById('availableStreamsBox');
   if (!box) return;
-  const available = Object.entries(activeConnections).filter(([id, c]) =>
-    c && c.isStreamingRemote && c.dataConn?.open && !document.getElementById('stream-' + id)
-  );
+  const available = [];
+  const keyParts = [];
+  for (const id in activeConnections) {
+    const c = activeConnections[id];
+    if (!c || !c.isStreamingRemote || !c.dataConn?.open) continue;
+    if (document.getElementById('stream-' + id)) continue;
+    available.push([id, c]);
+    keyParts.push(id + ':' + (c.name || ''));
+  }
+  const nextKey = keyParts.join('|');
+
   if (!available.length) {
-    box.style.display = 'none';
-    box.innerHTML = '';
+    if (_availableStreamsKey !== '') {
+      _availableStreamsKey = '';
+      box.innerHTML = '';
+      box.style.display = 'none';
+    }
     return;
   }
+  if (_availableStreamsKey === nextKey && box.firstElementChild) return;
+  _availableStreamsKey = nextKey;
   box.style.display = 'flex';
   box.innerHTML = '';
   available.forEach(([id, c]) => {
@@ -2473,6 +2525,16 @@ function updateOrAddUser(peerId, name, isHostUser, avatarUrl, status) {
   const connInfo = !isSelf ? activeConnections[peerId] : null;
   const remoteLive = !!(connInfo && connInfo.isStreamingRemote);
   const watchingNow = !isSelf && !!document.getElementById('stream-' + peerId);
+
+  // Assinatura do que é realmente visível. Se nada mudou, retornamos antes de tocar no DOM.
+  // Sem isso, cada poll do Discord (5s) e cada mensagem P2P reescrevia o innerHTML do item,
+  // recriando o <img> do avatar (novo decode de imagem) e forçando layout/paint do sidebar.
+  const renderKey = cleanName + '\u0001' + resolvedAvatar + '\u0001' + resolvedStatus +
+    '\u0001' + (isHostUser ? 1 : 0) + (remoteLive ? 1 : 0) + (watchingNow ? 1 : 0) + (isSelf ? 1 : 0);
+  if (li._renderKey === renderKey && li.firstElementChild) {
+    return;
+  }
+  li._renderKey = renderKey;
 
   li.className = 'user-item' + (isHostUser ? ' is-host-user' : '') + (isSelf ? ' user-item-self' : '');
   li.innerHTML = `
@@ -2562,11 +2624,23 @@ window.refreshSelfRoomIdentity = function () {
   try {
     updateOrAddUser(myPeerId, myName + ' (Você)', isHost, localId.avatarUrl, localId.status);
     const localProfile = sanitizeRemoteProfile(localId);
+    // Assinatura barata da identidade. O banner personalizado pode chegar a 180 KB em
+    // base64 e era re-serializado inteiro (JSON.stringify) a cada poll de 5 s.
+    const banner = (localProfile && localProfile.customBanner) || '';
     const nextKey = JSON.stringify({
       name: myName,
       avatarUrl: localId.avatarUrl,
       status: localId.status,
-      profile: localProfile,
+      id: localProfile?.id || '',
+      username: localProfile?.username || '',
+      discriminator: localProfile?.discriminator || '',
+      customStatus: localProfile?.customStatus || '',
+      bannerUrl: localProfile?.bannerUrl || '',
+      bannerColor: localProfile?.bannerColor || '',
+      streamStartedAt: localProfile?.streamStartedAt || 0,
+      spotify: localProfile?.spotify || null,
+      voice: localProfile?.voice || null,
+      bannerSig: banner.length + '|' + banner.slice(0, 24) + '|' + banner.slice(-24),
     });
     if (nextKey !== _lastBroadcastIdentityKey) {
       _lastBroadcastIdentityKey = nextKey;
@@ -2602,17 +2676,33 @@ function removeUserFromList(peerId) {
   updateUserCount();
 }
 
+let _lastReportedUserCount = -1;
 function updateUserCount() {
-  const count = document.querySelectorAll('#userList .user-item').length;
-  document.getElementById('userCount').textContent = count;
-  window.roxyDiscord?.onRoomStateChanged({ userCount: count });
+  const list = document.getElementById('userList');
+  if (!list) return;
+  const count = list.querySelectorAll('.user-item').length;
+  const countEl = document.getElementById('userCount');
+  if (countEl) {
+    const next = String(count);
+    if (countEl.textContent !== next) countEl.textContent = next;
+  }
+  // Só avisa o Discord quando o número realmente mudou (evita pushRichPresence em rajada)
+  if (count !== _lastReportedUserCount) {
+    _lastReportedUserCount = count;
+    window.roxyDiscord?.onRoomStateChanged({ userCount: count });
+  }
 }
 
 function updatePlaceholder() {
-  const cards = document.querySelectorAll('.stream-card');
-  document.getElementById('emptyPlaceholder').style.display = cards.length ? 'none' : 'flex';
-  if (!cards.length) {
-    document.getElementById('videoGrid').classList.remove('has-focused');
+  const grid = document.getElementById('videoGrid');
+  const cards = grid ? grid.querySelectorAll('.stream-card') : [];
+  const placeholder = document.getElementById('emptyPlaceholder');
+  if (placeholder) {
+    const next = cards.length ? 'none' : 'flex';
+    if (placeholder.style.display !== next) placeholder.style.display = next;
+  }
+  if (!cards.length && grid) {
+    grid.classList.remove('has-focused');
   }
   renderAvailableStreams();
 }
@@ -2632,8 +2722,17 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Tabela fixa + replace simples: evita criar um objeto/closure a cada caractere
+// escapado (isso roda em todo render de lista de usuários e cards).
+const _HTML_ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const _HTML_ESCAPE_HAS = /[&<>"']/;
+const _HTML_ESCAPE_RE = /[&<>"']/g;
 function escHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const str = String(s);
+  // replace() só quando há algo para escapar (a maioria absoluta das strings não tem)
+  return _HTML_ESCAPE_HAS.test(str)
+    ? str.replace(_HTML_ESCAPE_RE, c => _HTML_ESCAPE_MAP[c])
+    : str;
 }
 
 let _beepCtx = null;
@@ -3282,7 +3381,7 @@ document.getElementById('roomId').value = startupRoom;
 joinOrCreateRoom(startupRoom, false);
 
 // ─── Automated GitHub Auto-Updater System ──────────────────────────────────
-const CURRENT_VERSION = '1.2.0';
+const CURRENT_VERSION = '1.3.0';
 const GITHUB_REPO = 'mariocesarflore/Roxy-Room';
 
 function parseSemver(v) {

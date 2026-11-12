@@ -1,0 +1,12 @@
+Roxy Room P2P para Discord (Vencord) - Instalacao para Amigos
+================================================================
+
+1. Extraia TODA esta pasta do ZIP em qualquer lugar (ex: Area de Trabalho).
+2. De um duplo clique em "INSTALAR.bat".
+3. Se o Discord estiver aberto, confirme [S] para fecha-lo.
+4. O script instala/atualiza o Vencord no seu Discord automaticamente,
+   ativa o plugin "RoxyRoomScreen" e instala o filtro anti-eco de audio.
+5. Abra o Discord, entre em qualquer call de voz e pronto!
+
+Dica: Se voce nao quiser instalar no Discord, tambem pode assistir
+pelo navegador usando o link Web que seu amigo copiar na call.

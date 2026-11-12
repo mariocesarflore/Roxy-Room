@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "name": "Roxy Room",
-  "changelog": "Banner do Discord e banner personalizado no app, sons relaxantes ao abrir/fechar tela com controle de volume e mute, perfil clicável de participantes sem servidores/sair e tela cheia real da transmissão.",
+  "changelog": "Grande otimização no app (renderização, áudio e consumo de recursos) + lançamento oficial do plugin Vencord RoxyRoomScreen com grid estilo Discord, tela cheia, sons de transmissão/espectador e qualidade até 4K 144fps.",
   "downloadUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyRoom-Update.zip",
   "setupUrl": "https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe"
 }

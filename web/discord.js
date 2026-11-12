@@ -62,18 +62,30 @@
     'preset:crimson': 'radial-gradient(circle at 70% 25%, rgba(244, 63, 94, 0.46) 0%, transparent 55%), radial-gradient(circle at 25% 75%, rgba(159, 18, 57, 0.36) 0%, transparent 55%), linear-gradient(125deg, #160812 0%, #4c0d24 55%, #1d102a 100%)',
   };
 
+  // Memoização (pequena LRU): esta função recebe banners em base64 de até 180 KB e era
+  // chamada em toda renderização/poll. O regex sobre 180 mil caracteres custa ~1 ms.
+  const _bannerMemo = new Map();
+
   function sanitizeBannerValue(raw) {
     if (typeof raw !== 'string') return '';
+    const cached = _bannerMemo.get(raw);
+    if (cached !== undefined) return cached;
     const v = raw.trim();
-    if (!v) return '';
-    if (BANNER_PRESETS[v]) return v;
-    if (/^https:\/\/cdn\.discordapp\.com\/banners\/[0-9]+\/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif)(?:\?size=[0-9]{2,4})?$/.test(v)) {
-      return v;
+    let out = '';
+    if (!v) {
+      out = '';
+    } else if (BANNER_PRESETS[v]) {
+      out = v;
+    } else if (v.length > 180000) {
+      out = '';
+    } else if (v.charCodeAt(0) === 100 /* "data:" */) {
+      out = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v) ? v : '';
+    } else if (/^https:\/\/cdn\.discordapp\.com\/banners\/[0-9]+\/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif)(?:\?size=[0-9]{2,4})?$/.test(v)) {
+      out = v;
     }
-    if (v.length <= 180000 && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v)) {
-      return v;
-    }
-    return '';
+    if (_bannerMemo.size > 8) _bannerMemo.clear();
+    _bannerMemo.set(raw, out);
+    return out;
   }
 
   function sanitizeBannerColor(raw) {
@@ -223,10 +235,34 @@
     return n.toLocaleString('pt-BR');
   }
 
+  const _ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const _ESCAPE_HAS = /[&<>"']/;
+  const _ESCAPE_RE = /[&<>"']/g;
   function escapeHtml(str) {
-    return String(str || '').replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
+    const s = String(str || '');
+    return _ESCAPE_HAS.test(s) ? s.replace(_ESCAPE_RE, (c) => _ESCAPE_MAP[c]) : s;
+  }
+
+  // Escrever textContent com o mesmo valor ainda invalida estilo/recálculo no Chromium.
+  // Este helper só toca no DOM quando o texto realmente mudou.
+  function setText(el, value) {
+    if (!el) return;
+    const next = value === undefined || value === null ? '' : String(value);
+    if (el.textContent !== next) el.textContent = next;
+  }
+
+  // Atualiza um <img> de avatar só quando a URL mudou (evita novo decode de imagem
+  // a cada poll de 5 s).
+  function setAvatarHtml(el, url, displayName) {
+    if (!el) return;
+    const next = url ? 'img' + url : 'txt' + displayName;
+    if (el._avatarKey === next) return;
+    el._avatarKey = next;
+    if (url) {
+      el.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}">`;
+    } else {
+      el.textContent = (displayName || 'U').charAt(0).toUpperCase() || 'U';
+    }
   }
 
   function getAvatarUrl(user) {
@@ -314,18 +350,11 @@
     const avatarUrl = getAvatarUrl(user);
     const status = getEffectiveOnlineStatus();
 
-    const avatarEl = document.getElementById('userAvatar');
-    if (avatarEl) {
-      if (avatarUrl) {
-        avatarEl.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`;
-      } else {
-        avatarEl.textContent = displayName.charAt(0).toUpperCase() || 'U';
-      }
-    }
+    setAvatarHtml(document.getElementById('userAvatar'), avatarUrl, displayName);
 
     const nameEl = document.getElementById('profileDisplayName');
     if (nameEl) {
-      nameEl.textContent = displayName;
+      setText(nameEl, displayName);
       if (user) nameEl.dataset.discordLocked = '1';
       else delete nameEl.dataset.discordLocked;
     }
@@ -333,13 +362,13 @@
     const subEl = document.getElementById('profileSubLabel');
     if (subEl) {
       if (state.apiUser) {
-        subEl.textContent = '@' + state.apiUser.username;
+        setText(subEl, '@' + state.apiUser.username);
       } else if (state.ipcUser) {
-        subEl.textContent = 'Discord IPC • @' + state.ipcUser.username;
+        setText(subEl, 'Discord IPC • @' + state.ipcUser.username);
       } else if (state.discordRunning) {
-        subEl.textContent = 'Discord • clique p/ vincular';
+        setText(subEl, 'Discord • clique p/ vincular');
       } else {
-        subEl.textContent = 'Discord';
+        setText(subEl, 'Discord');
       }
     }
 
@@ -350,13 +379,18 @@
     }
 
     const dotEl = document.getElementById('profileAvatarDot');
-    if (dotEl) dotEl.className = 'profile-avatar-status ' + status.key;
+    if (dotEl) {
+      const next = 'profile-avatar-status ' + status.key;
+      if (dotEl.className !== next) dotEl.className = next;
+    }
 
     const pillEl = document.getElementById('profileOnlinePill');
-    if (pillEl) pillEl.className = 'profile-online-pill ' + status.key;
+    if (pillEl) {
+      const next = 'profile-online-pill ' + status.key;
+      if (pillEl.className !== next) pillEl.className = next;
+    }
 
-    const pillTextEl = document.getElementById('profileOnlineText');
-    if (pillTextEl) pillTextEl.textContent = status.label;
+    setText(document.getElementById('profileOnlineText'), status.label);
 
     if (typeof window.refreshSelfRoomIdentity === 'function') {
       window.refreshSelfRoomIdentity();
@@ -401,6 +435,8 @@
     };
   }
 
+  let _lastStatusMenuKey = null;
+
   function renderModal() {
     const peer = activePeerProfile;
     const modalCard = document.getElementById('discordProfileCard');
@@ -419,29 +455,30 @@
     applyBannerToElement(bannerEl, { customBanner, bannerUrl, bannerColor });
 
     // 2. Modal Avatar
-    const dpAvatar = document.getElementById('dpAvatar');
-    if (dpAvatar) {
-      if (avatarUrl) {
-        dpAvatar.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`;
-      } else {
-        dpAvatar.textContent = displayName.charAt(0).toUpperCase() || 'U';
-      }
-    }
+    setAvatarHtml(document.getElementById('dpAvatar'), avatarUrl, displayName);
 
     const dpDot = document.getElementById('dpAvatarStatusDot');
-    if (dpDot) dpDot.className = 'dp-avatar-status ' + status.key;
+    if (dpDot) {
+      const next = 'dp-avatar-status ' + status.key;
+      if (dpDot.className !== next) dpDot.className = next;
+    }
 
     const dpStatusPill = document.getElementById('dpStatusPill');
-    if (dpStatusPill) dpStatusPill.className = 'dp-status-pill ' + status.key;
-    const dpStatusText = document.getElementById('dpStatusText');
-    if (dpStatusText) dpStatusText.textContent = status.label;
-    document.querySelectorAll('#dpStatusMenu .dp-status-opt').forEach((opt) => {
-      opt.classList.toggle('active', opt.dataset.status === status.key);
-    });
+    if (dpStatusPill) {
+      const next = 'dp-status-pill ' + status.key;
+      if (dpStatusPill.className !== next) dpStatusPill.className = next;
+    }
+    setText(document.getElementById('dpStatusText'), status.label);
+    // A lista de opções só precisa ser sincronizada quando o status muda
+    if (_lastStatusMenuKey !== status.key) {
+      _lastStatusMenuKey = status.key;
+      document.querySelectorAll('#dpStatusMenu .dp-status-opt').forEach((opt) => {
+        opt.classList.toggle('active', opt.dataset.status === status.key);
+      });
+    }
 
     // 3. Name & Username Tag
-    const dpName = document.getElementById('dpDisplayName');
-    if (dpName) dpName.textContent = displayName;
+    setText(document.getElementById('dpDisplayName'), displayName);
 
     const dpTag = document.getElementById('dpUsernameTag');
     if (dpTag) {
@@ -599,10 +636,24 @@
     }
   }
 
+  let _guildsRenderKey = null;
+
   function renderGuildsCard() {
     const listEl = document.getElementById('dpGuildsList');
     const countEl = document.getElementById('dpGuildsCount');
     if (!listEl) return;
+
+    // Antes: com 40+ servidores, cada poll de 5 s destruía e recriava todos os itens
+    // e seus <img> de ícone (dezenas de loads/decodes de imagem). Agora só re-renderiza
+    // quando o conteúdo muda de verdade.
+    const guilds = Array.isArray(state.guilds) ? state.guilds : [];
+    let key = state.apiUser ? 'u' : 'n';
+    for (const g of guilds) {
+      key += '|' + g.id + ',' + g.name + ',' + (g.icon || '') + ',' + (g.owner ? 1 : 0) +
+        ',' + (g.approximate_member_count || 0);
+    }
+    if (_guildsRenderKey === key && listEl.firstElementChild) return;
+    _guildsRenderKey = key;
 
     if (!Array.isArray(state.guilds) || state.guilds.length === 0) {
       if (countEl) countEl.style.display = 'none';
@@ -615,8 +666,8 @@
     }
 
     if (countEl) {
-      countEl.textContent = state.guilds.length;
-      countEl.style.display = 'inline-block';
+      setText(countEl, state.guilds.length);
+      if (countEl.style.display !== 'inline-block') countEl.style.display = 'inline-block';
     }
 
     const sorted = [...state.guilds].sort((a, b) => {
@@ -651,6 +702,15 @@
         </div>
       `;
     }).join('');
+  }
+
+  // Re-renderiza as tags só quando a combinação muda (chamado a cada 1 s pelo timer)
+  function setTags(tagsEl, tags) {
+    if (!tagsEl) return;
+    const key = tags.join('\u0001');
+    if (tagsEl._tagsKey === key && tagsEl.firstElementChild) return;
+    tagsEl._tagsKey = key;
+    tagsEl.innerHTML = tags.map((t) => `<span class="dp-tag">${escapeHtml(t)}</span>`).join('');
   }
 
   function renderVoiceCard() {
@@ -694,14 +754,11 @@
           subEl.title = subEl.textContent;
         }
       }
-      if (tagsEl) {
-        const tags = [
-          peer.isStreaming ? 'Streamer Ao Vivo' : 'Na Sala',
-          peer.isHost ? 'Host' : 'Participante',
-          'Roxy Club',
-        ];
-        tagsEl.innerHTML = tags.map((t) => `<span class="dp-tag">${escapeHtml(t)}</span>`).join('');
-      }
+      setTags(tagsEl, [
+        peer.isStreaming ? 'Streamer Ao Vivo' : 'Na Sala',
+        peer.isHost ? 'Host' : 'Participante',
+        'Roxy Club',
+      ]);
       return;
     }
 
@@ -759,14 +816,11 @@
       }
     }
 
-    if (tagsEl) {
-      const tags = [];
-      tags.push(state.isStreaming ? 'Streamer Ao Vivo' : 'Streamer');
-      tags.push(state.isHost ? 'Host' : 'Participante');
-      if (user && user.premium_type > 0) tags.push('Discord Nitro');
-      else tags.push('Roxy Club');
-      tagsEl.innerHTML = tags.map((t) => `<span class="dp-tag">${escapeHtml(t)}</span>`).join('');
-    }
+    setTags(tagsEl, [
+      state.isStreaming ? 'Streamer Ao Vivo' : 'Streamer',
+      state.isHost ? 'Host' : 'Participante',
+      (user && user.premium_type > 0) ? 'Discord Nitro' : 'Roxy Club',
+    ]);
   }
 
   function renderFooterAndConfig() {
@@ -777,34 +831,55 @@
     const footerSub = document.getElementById('dpFooterSub');
 
     const isAuthed = !!state.accessToken && !!state.apiUser;
-    if (connectBtn) {
-      connectBtn.style.display = isAuthed ? 'none' : 'inline-block';
-    }
-    if (refreshBtn) {
-      refreshBtn.style.display = isAuthed ? 'inline-block' : 'none';
-    }
-    if (disconnectBtn) {
-      disconnectBtn.style.display = isAuthed ? 'inline-block' : 'none';
-    }
+    setDisplay(connectBtn, isAuthed ? 'none' : 'inline-block');
+    setDisplay(refreshBtn, isAuthed ? 'inline-block' : 'none');
+    setDisplay(disconnectBtn, isAuthed ? 'inline-block' : 'none');
 
     if (footerTitle && footerSub) {
       if (isAuthed) {
-        footerTitle.textContent = state.ipcConnected
+        setText(footerTitle, state.ipcConnected
           ? 'OAuth2 + Discord Desktop IPC Conectados'
-          : 'Discord OAuth2 Conectado';
-        footerSub.textContent = state.voiceChannel
+          : 'Discord OAuth2 Conectado');
+        setText(footerSub, state.voiceChannel
           ? `Dados ao vivo sincronizados (@${state.apiUser.username}) incluindo canal de voz.`
-          : `Avatar, banner, servidores e conexões sincronizados com @${state.apiUser.username}.`;
+          : `Avatar, banner, servidores e conexões sincronizados com @${state.apiUser.username}.`);
       } else {
-        footerTitle.textContent = 'Integração com OAuth2 + Gateway Presence';
-        footerSub.textContent = 'Avatar, banner, status, atividade, servidores e voz dependem das permissões autorizadas pelo usuário.';
+        setText(footerTitle, 'Integração com OAuth2 + Gateway Presence');
+        setText(footerSub, 'Avatar, banner, status, atividade, servidores e voz dependem das permissões autorizadas pelo usuário.');
       }
     }
+  }
+
+  function setDisplay(el, value) {
+    if (el && el.style.display !== value) el.style.display = value;
+  }
+
+  function renderSyncDiscordRoomButton() {
+    const btn = document.getElementById('syncDiscordRoomBtn');
+    const txt = document.getElementById('syncDiscordRoomText');
+    if (!btn || !txt) return;
+
+    const vcId = state.voiceChannel && state.voiceChannel.id ? String(state.voiceChannel.id).trim() : '';
+    if (!vcId) {
+      setDisplay(btn, 'none');
+      return;
+    }
+
+    const dcRoom = ('DC-' + vcId).toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    const vcName = String(state.voiceChannel.name || 'Call Discord').slice(0, 22);
+    const alreadySynced = state.roomConnected && String(state.roomId || '').toUpperCase() === dcRoom;
+
+    setDisplay(btn, alreadySynced ? 'none' : 'flex');
+    if (btn.dataset.dcRoom !== dcRoom) btn.dataset.dcRoom = dcRoom;
+    setText(txt, `Usar sala: ${vcName}`);
+    const title = `Entrar na sala ${dcRoom} (compatível com o plugin Vencord da call "${vcName}")`;
+    if (btn.title !== title) btn.title = title;
   }
 
   function renderAll() {
     renderProfileSidebar();
     renderModal();
+    renderSyncDiscordRoomButton();
   }
 
   // ─── Discord OAuth2 & API Actions ───────────────────────────────────────────
@@ -880,9 +955,13 @@
     }
   }
 
+  let _lastPresenceKey = '';
+
   function pushRichPresence() {
     if (!state.ipcConnected) return;
     if (state.presenceStatus === 'offline') {
+      if (_lastPresenceKey === 'clear') return;
+      _lastPresenceKey = 'clear';
       bridgeSend('discord:setActivity:' + JSON.stringify({ clear: true }));
       return;
     }
@@ -903,7 +982,12 @@
       largeImageKey: 'https://cdn.discordapp.com/app-assets/1569943132269707315/1569947625594163261.png',
       largeImageText: `Roxy Room • ${activeRoom}`,
     };
-    bridgeSend('discord:setActivity:' + JSON.stringify(payload));
+    // Deduplicação: esta função é chamada a cada mudança de estado da sala/usuários.
+    // Sem o filtro, cada chamada gerava um frame IPC + uma thread no processo nativo.
+    const payloadStr = JSON.stringify(payload);
+    if (payloadStr === _lastPresenceKey) return;
+    _lastPresenceKey = payloadStr;
+    bridgeSend('discord:setActivity:' + payloadStr);
   }
 
   function handleDiscordInviteJoin(rawSecret) {
@@ -1391,6 +1475,20 @@
     });
 
     document.getElementById('dpDisconnectBtn')?.addEventListener('click', disconnectDiscord);
+
+    document.getElementById('syncDiscordRoomBtn')?.addEventListener('click', () => {
+      const btn = document.getElementById('syncDiscordRoomBtn');
+      const dcRoom = btn?.dataset?.dcRoom || '';
+      if (!dcRoom) return;
+      const roomInput = document.getElementById('roomId');
+      if (roomInput) roomInput.value = dcRoom;
+      if (typeof window.joinRoom === 'function') {
+        window.joinRoom(dcRoom, false);
+      } else {
+        document.getElementById('joinRoomBtn')?.click();
+      }
+      renderSyncDiscordRoomButton();
+    });
   }
 
   // ─── Public Hooks for renderer.js ───────────────────────────────────────────
@@ -1412,6 +1510,7 @@
       }
       if (userCount !== undefined) state.roomUserCount = Number(userCount) || 0;
       pushRichPresence();
+      renderSyncDiscordRoomButton();
       if (activityChanged) renderModal();
     },
     onStreamStateChanged({ streaming }) {

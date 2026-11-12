@@ -43,6 +43,10 @@
     <a href="https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/Roxy.Room.Setup.exe">
       <img src="https://img.shields.io/badge/Download-Roxy.Room.Setup.exe-6366F1?style=for-the-badge&logo=windows&logoColor=white" height="40" alt="Download Roxy Room" />
     </a>
+    &nbsp;
+    <a href="https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyVencord-Amigos.zip">
+      <img src="https://img.shields.io/badge/Plugin%20Discord-RoxyVencord--Amigos.zip-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40" alt="Download Plugin Vencord" />
+    </a>
   </p>
 
   <br />
@@ -191,6 +195,17 @@ O Roxy Room utiliza um fluxo contínuo de atualizações sem atrito:
 1. Abra o aplicativo e copie o código da sala gerado.
 2. Compartilhe o código com o participante para que ele se conecte à mesma sala.
 3. Clique em **Iniciar Transmissão** (ou pressione <kbd>Alt + G</kbd>) para compartilhar tela ou janela com áudio.
+
+---
+
+## Plugin Vencord (RoxyRoomScreen no Discord)
+
+Além do aplicativo standalone, o repositório também inclui o plugin nativo **`RoxyRoomScreen`** para Vencord/Discord em [`vencord-plugin/`](vencord-plugin/README.md):
+
+- **Download direto (pronto para instalar):** [RoxyVencord-Amigos.zip](https://github.com/mariocesarflore/Roxy-Room/releases/latest/download/RoxyVencord-Amigos.zip)
+- Transmissão P2P integrada diretamente na chamada de voz do Discord (botão de tela no painel de voz).
+- Grid estilo Discord, modo foco/spotlight, tela cheia real, sons ao abrir/fechar transmissão e entrada/saída de espectadores, áudio sem eco com `RoxyAudioHelper.exe` e suporte até **4K / 144 FPS**.
+- Veja instruções completas de instalação para você e seus amigos em [`vencord-plugin/README.md`](vencord-plugin/README.md).
 
 ---
 

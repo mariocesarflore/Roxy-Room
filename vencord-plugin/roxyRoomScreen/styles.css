@@ -1,0 +1,1084 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Roxy Room P2P Screen Share for Vencord
+   Visual alinhado ao Discord nativo (paleta #313338 / blurple #5865f2).
+   Tudo isolado por classe .roxy-* para não vazar no tema do Discord.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Palco dentro da call ──────────────────────────────────────────────────── */
+
+.roxy-vc-stage-overlay {
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 76px;
+    z-index: 25;
+    background: #000000;
+    padding: 8px 14px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    contain: layout paint style;
+}
+
+.roxy-vc-stage-grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+.roxy-vc-tile,
+.roxy-vc-participant-card {
+    width: calc((100% - (var(--roxy-cols, 2) - 1) * 8px) / var(--roxy-cols, 2));
+    height: calc((100% - (var(--roxy-rows, 2) - 1) * 8px) / var(--roxy-rows, 2));
+    min-width: 0;
+    min-height: 0;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    contain: layout paint style;
+}
+
+.roxy-vc-tile {
+    background: #000000;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.roxy-vc-tile:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.roxy-vc-tile:fullscreen,
+.roxy-vc-tile.is-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #000000 !important;
+    cursor: default;
+}
+
+.roxy-vc-tile video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000000;
+    display: block;
+}
+
+/* ─── Cards de participantes (quem está na call) ────────────────────────────── */
+
+.roxy-vc-participant-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.roxy-vc-participant-avatar {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    user-select: none;
+}
+
+.roxy-vc-participant-fallback {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: #5865f2;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.roxy-vc-participant-status {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: rgba(15, 17, 23, 0.78);
+    color: #f23f43;
+}
+
+/* ─── Modo destaque (spotlight) ─────────────────────────────────────────────── */
+
+.roxy-vc-stage-grid.has-spotlight {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.roxy-vc-stage-grid.has-spotlight .roxy-vc-tile.is-spotlight {
+    width: 100%;
+    max-width: 1280px;
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.roxy-vc-spotlight-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    flex: 0 0 auto;
+    padding: 2px 0;
+}
+
+.roxy-vc-participant-card.is-mini,
+.roxy-vc-mini-stream-card {
+    width: 152px;
+    height: 86px;
+    min-width: 128px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-sizing: border-box;
+}
+
+.roxy-vc-mini-stream-card {
+    background: #14151a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f2f3f5;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.roxy-vc-mini-stream-card:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: #1c1e24;
+}
+
+.roxy-vc-mini-stream-card.is-active {
+    border-color: #5865f2;
+}
+
+.roxy-vc-mini-live-dot {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #f23f43;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+}
+
+.roxy-vc-participant-card.is-mini .roxy-vc-participant-avatar,
+.roxy-vc-participant-card.is-mini .roxy-vc-participant-fallback {
+    width: 38px;
+    height: 38px;
+    font-size: 16px;
+}
+
+.roxy-vc-participant-card.is-mini .roxy-vc-tile-bottom,
+.roxy-vc-mini-stream-card .roxy-vc-tile-bottom {
+    left: 5px;
+    right: 5px;
+    bottom: 5px;
+}
+
+.roxy-vc-participant-card.is-mini .roxy-vc-streamer-pill,
+.roxy-vc-mini-stream-card .roxy-vc-streamer-pill {
+    padding: 2px 7px;
+    font-size: 11px;
+    max-width: 100%;
+}
+
+.roxy-vc-participant-card.is-mini .roxy-vc-participant-status {
+    right: 5px;
+    bottom: 5px;
+    padding: 3px 4px;
+}
+
+.roxy-vc-tile.is-paused-card {
+    background: #111216;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+}
+
+.roxy-vc-paused-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+}
+
+.roxy-vc-paused-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f2f3f5;
+}
+
+/* ─── Overlay do tile: AO VIVO, qualidade, nome e controles ─────────────────── */
+
+.roxy-vc-tile-top {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 3;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+}
+
+.roxy-vc-live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f23f43;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.35px;
+    line-height: 1.5;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.roxy-vc-live-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #ffffff;
+}
+
+.roxy-vc-quality-chip {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(15, 17, 23, 0.82);
+    color: #dbdee1;
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.roxy-vc-tile:hover .roxy-vc-quality-chip,
+.roxy-vc-tile.is-spotlight .roxy-vc-quality-chip {
+    opacity: 1;
+}
+
+.roxy-vc-tile-bottom {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.roxy-vc-streamer-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(15, 17, 23, 0.78);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    max-width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roxy-vc-streamer-pill img {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.roxy-vc-tile-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px;
+    border-radius: 8px;
+    background: rgba(15, 17, 23, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+    flex-shrink: 0;
+}
+
+.roxy-vc-tile:hover .roxy-vc-tile-controls,
+.roxy-vc-tile-controls:focus-within,
+.roxy-vc-tile.is-spotlight .roxy-vc-tile-controls,
+.roxy-vc-tile:fullscreen .roxy-vc-tile-controls,
+.roxy-vc-tile.is-fullscreen .roxy-vc-tile-controls {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.roxy-vc-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #dbdee1;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.roxy-vc-icon-btn svg {
+    width: 17px;
+    height: 17px;
+}
+
+.roxy-vc-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+.roxy-vc-icon-btn.is-on {
+    color: #5865f2;
+}
+
+.roxy-vc-icon-btn.is-off {
+    color: #f23f43;
+}
+
+.roxy-vc-icon-btn.is-danger:hover {
+    background: rgba(242, 63, 67, 0.85);
+    color: #ffffff;
+}
+
+/* Slider de volume que expande no hover (estilo Discord) */
+.roxy-vc-volume-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: width 0.18s ease, opacity 0.18s ease;
+}
+
+.roxy-vc-tile-controls:hover .roxy-vc-volume-wrap,
+.roxy-vc-volume-wrap.is-open,
+.roxy-vc-volume-wrap:focus-within {
+    width: 92px;
+    opacity: 1;
+}
+
+.roxy-vc-vol {
+    width: 64px;
+    height: 16px;
+    accent-color: #5865f2;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.roxy-vc-vol-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #b5bac1;
+    min-width: 30px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ─── Badge "AO VIVO" na lista de voz do Discord ───────────────────────────── */
+
+.roxy-sidebar-live-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    padding: 1px 6px;
+    height: 16px;
+    border-radius: 999px;
+    background: #f23f43;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    line-height: 1;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+/* ─── Botões genéricos ─────────────────────────────────────────────────────── */
+
+.roxy-vc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background: #4e5058;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.14s ease;
+    white-space: nowrap;
+}
+
+.roxy-vc-btn:hover {
+    background: #5d6069;
+}
+
+.roxy-vc-btn.primary {
+    background: #5865f2;
+}
+
+.roxy-vc-btn.primary:hover {
+    background: #4752c4;
+}
+
+.roxy-vc-btn.primary:disabled {
+    background: #4e5058;
+    color: #a3a6aa;
+    cursor: not-allowed;
+}
+
+.roxy-vc-btn.danger {
+    background: #da373c;
+}
+
+.roxy-vc-btn.danger:hover {
+    background: #a1282c;
+}
+
+.roxy-vc-btn.success {
+    background: #248046;
+}
+
+.roxy-vc-btn.success:hover {
+    background: #1a6334;
+}
+
+.roxy-vc-meta {
+    font-size: 12px;
+    color: #949ba4;
+}
+
+.roxy-vc-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.roxy-vc-live-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #f23f43;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+}
+
+/* ─── Botão do painel de voz ───────────────────────────────────────────────── */
+
+.roxy-vc-panel-mount {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.roxy-vc-panel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 32px;
+    min-width: 34px;
+    padding: 0 6px;
+    border-radius: 8px;
+    border: none;
+    background: var(--button-secondary-background, #232428);
+    color: var(--interactive-normal, #b5bac1);
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.roxy-vc-panel-btn:hover {
+    background: var(--button-secondary-background-hover, #35373c);
+    color: var(--interactive-hover, #f2f3f5);
+}
+
+.roxy-vc-panel-btn.is-live {
+    background: rgba(35, 165, 90, 0.22);
+    color: #2dc770;
+}
+
+.roxy-vc-panel-btn.is-live:hover {
+    background: rgba(218, 55, 60, 0.86);
+    color: #ffffff;
+}
+
+/* ─── Modal (backdrop + janela) ────────────────────────────────────────────── */
+
+.roxy-vc-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10002;
+    background: rgba(0, 0, 0, 0.82);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: roxyFadeIn 0.12s ease;
+}
+
+@keyframes roxyFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.roxy-vc-modal {
+    background: #313338;
+    color: #f2f3f5;
+    border-radius: 8px;
+    padding: 16px;
+    width: 720px;
+    max-width: 94vw;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+}
+
+.roxy-vc-modal.roxy-picker-modal {
+    width: 940px;
+    padding: 16px 16px 14px;
+    gap: 12px;
+}
+
+.roxy-vc-modal.narrow {
+    width: 480px;
+}
+
+.roxy-vc-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.roxy-vc-modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+    color: #f2f3f5;
+}
+
+/* ─── Seletor de fonte (abas) ──────────────────────────────────────────────── */
+
+.roxy-picker-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    border-radius: 8px;
+    background: #1e1f22;
+    flex-shrink: 0;
+}
+
+.roxy-picker-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 34px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #b5bac1;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.roxy-picker-tab svg {
+    width: 17px;
+    height: 17px;
+}
+
+.roxy-picker-tab:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #f2f3f5;
+}
+
+.roxy-picker-tab.active {
+    background: #404249;
+    color: #ffffff;
+}
+
+/* ─── Corpo do seletor ─────────────────────────────────────────────────────── */
+
+.roxy-picker-body {
+    min-height: 240px;
+    max-height: 46vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 2px;
+    contain: content;
+}
+
+.roxy-picker-empty {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #949ba4;
+    font-size: 14px;
+}
+
+.roxy-vc-sources-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 12px;
+}
+
+.roxy-vc-source-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    color: #dbdee1;
+    min-width: 0;
+}
+
+.roxy-vc-source-thumb-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #1e1f22;
+    border: 2px solid transparent;
+    transition: border-color 0.14s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.roxy-vc-source-card:hover .roxy-vc-source-thumb-wrap {
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.roxy-vc-source-card.selected .roxy-vc-source-thumb-wrap {
+    border-color: #5865f2;
+}
+
+.roxy-vc-source-thumb-wrap.is-camera {
+    flex-direction: column;
+    gap: 8px;
+    color: #80848e;
+    background: #1e1f22;
+}
+
+.roxy-vc-camera-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b5bac1;
+    max-width: 80%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.roxy-vc-source-check {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #5865f2;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.roxy-vc-source-check svg {
+    width: 14px;
+    height: 14px;
+}
+
+.roxy-vc-source-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.roxy-vc-source-placeholder {
+    color: #6d6f78;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.roxy-vc-source-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 2px;
+}
+
+.roxy-vc-source-appicon {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    object-fit: contain;
+}
+
+.roxy-vc-source-appicon.fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #b5bac1;
+}
+
+.roxy-vc-source-appicon.fallback svg {
+    width: 16px;
+    height: 16px;
+}
+
+.roxy-vc-source-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #dbdee1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roxy-vc-source-card.selected .roxy-vc-source-name {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* ─── Painel avançado (engrenagem) ─────────────────────────────────────────── */
+
+.roxy-picker-advanced {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #2b2d31;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.roxy-picker-advanced label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #b5bac1;
+    font-weight: 600;
+}
+
+.roxy-picker-advanced select,
+.roxy-vc-input {
+    background: #1e1f22;
+    color: #f2f3f5;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    padding: 6px 9px;
+    font-size: 12px;
+    outline: none;
+}
+
+.roxy-picker-advanced select:focus,
+.roxy-vc-input:focus {
+    border-color: #5865f2;
+}
+
+.roxy-picker-advanced-links {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.roxy-picker-error {
+    color: #fa777c;
+    background: rgba(242, 63, 67, 0.1);
+    border: 1px solid rgba(242, 63, 67, 0.3);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+/* ─── Rodapé do seletor ────────────────────────────────────────────────────── */
+
+.roxy-picker-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+}
+
+.roxy-picker-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.roxy-picker-info-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roxy-picker-info-sub {
+    font-size: 13px;
+    color: #949ba4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roxy-picker-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.roxy-quality-seg {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border-radius: 8px;
+    background: #1e1f22;
+}
+
+.roxy-quality-btn {
+    height: 28px;
+    min-width: 44px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #b5bac1;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.roxy-quality-btn:hover {
+    color: #ffffff;
+}
+
+.roxy-quality-btn.active {
+    background: #404249;
+    color: #ffffff;
+}
+
+.roxy-picker-circle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 4px;
+    border: none;
+    background: #4e5058;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.14s ease;
+}
+
+.roxy-picker-circle-btn svg {
+    width: 17px;
+    height: 17px;
+}
+
+.roxy-picker-circle-btn:hover,
+.roxy-picker-circle-btn.active {
+    background: #5d6069;
+}
+
+.roxy-picker-go-btn {
+    height: 32px;
+    padding: 0 18px;
+}
+
+/* ─── Faixa promocional (visual do banner Nitro do Discord) ────────────────── */
+
+.roxy-picker-promo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #7c5cf5 0%, #a45cf0 55%, #d16ae0 100%);
+    color: #ffffff;
+    flex-shrink: 0;
+}
+
+.roxy-picker-promo-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+}
+
+.roxy-picker-promo-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roxy-picker-promo-text strong {
+    font-weight: 800;
+}
+
+.roxy-picker-promo-btn {
+    height: 30px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #3b2a68;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.12s ease, background 0.14s ease;
+}
+
+.roxy-picker-promo-btn:hover {
+    background: #f2f3f5;
+    transform: translateY(-1px);
+}
+
+/* ─── Modal de sala ────────────────────────────────────────────────────────── */
+
+.roxy-vc-peers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.roxy-vc-peer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #2b2d31;
+    font-size: 13px;
+    color: #dbdee1;
+}
+
+.roxy-vc-peer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.roxy-vc-peer-left img {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
